@@ -99,7 +99,9 @@ typedef struct {
 	ngx_str_t               helo_server_name;
 	ngx_str_t               greeting;
 	size_t                  client_buffer_size;
-	ngx_uint_t              auth_methods;
+	ngx_uint_t              auth_methods;  //存放支持的auth method，位图方式
+	ngx_array_t             capabilities;  
+	ngx_str_t               capability;    //存放capabilities对应的字符串
 	
 	/* server ctx */
 	oc_smtp_conf_ctx_t    *ctx;
@@ -122,8 +124,12 @@ typedef struct {
 	ngx_uint_t              mail_state;
 	ngx_array_t             args;
 	ngx_uint_t              command;
+	
+    ngx_str_t               smtp_helo;
+    ngx_str_t               smtp_from;
+	ngx_array_t             smtp_rcpts;
 
-	/* used to parse POP3/IMAP/SMTP command */
+	/* used to parse SMTP command */
     ngx_uint_t              state;
     u_char                 *cmd_start;
     u_char                 *arg_start;
@@ -133,6 +139,7 @@ typedef struct {
 	unsigned                starttls:1;
 	unsigned                quit:1;
 	unsigned                blocked:1;
+	unsigned                esmtp:1;
 }  oc_smtp_session_t;
 
 

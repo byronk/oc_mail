@@ -21,6 +21,14 @@ static ngx_conf_bitmask_t  oc_smtp_auth_methods[] = {
     { ngx_null_string, 0 }
 };
 
+static ngx_str_t  oc_smtp_auth_methods_names[] = {
+    ngx_string("PLAIN"),
+    ngx_string("LOGIN"),
+    ngx_null_string,  /* APOP */
+    ngx_string("CRAM-MD5"),
+    ngx_null_string   /* NONE */
+};
+
 
 
 static ngx_command_t  oc_smtp_core_commands[] = {
@@ -143,6 +151,12 @@ oc_smtp_core_create_srv_conf(ngx_conf_t *cf)
 	cscf->so_keepalive = NGX_CONF_UNSET;
 	cscf->client_buffer_size = NGX_CONF_UNSET_SIZE;
 
+	if (ngx_array_init(&cscf->capabilities, cf->pool, 4, sizeof(ngx_str_t))
+        != NGX_OK)
+    {
+        return NULL;
+    }
+
 
 	return cscf;
 }
@@ -155,7 +169,9 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 	oc_smtp_core_srv_conf_t *conf = child;
 
 	size_t                     size;
-	u_char                    *p;
+	ngx_str_t                 *c;
+	u_char                    *p, *auth, *last;
+	ngx_uint_t                 i, m, auth_enabled;
 
 	ngx_conf_merge_msec_value(conf->timeout, prev->timeout, 60000);
 	ngx_log_stderr(0, "time out: %d", conf->timeout);
@@ -167,6 +183,12 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 				(size_t) ngx_pagesize);
 
 	ngx_conf_merge_value(conf->so_keepalive, prev->so_keepalive, 0);
+
+    ngx_conf_merge_bitmask_value(conf->auth_methods,
+                          prev->auth_methods,
+                          (NGX_CONF_BITMASK_SET
+                           |OC_SMTP_AUTH_PLAIN_ENABLED
+                           |OC_SMTP_AUTH_LOGIN_ENABLED));
 
 
 	ngx_conf_merge_str_value(conf->server_name, prev->server_name, "");
@@ -189,6 +211,80 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 	*p++ = '2'; *p++ = '2'; *p++ = '0'; *p++ = ' ';
 	p = ngx_cpymem(p, conf->server_name.data, conf->server_name.len);
 	ngx_memcpy(p, " ESMTP ready" CRLF, sizeof(" ESMTP ready" CRLF) - 1);
+
+	//Éú³Éauth capabilities
+	if (conf->capabilities.nelts == 0) {
+        conf->capabilities = prev->capabilities;
+    }
+
+    size = sizeof("250-") - 1 + conf->server_name.len + sizeof(CRLF) - 1;
+
+    c = conf->capabilities.elts;
+    for (i = 0; i < conf->capabilities.nelts; i++) {
+        size += sizeof("250 ") - 1 + c[i].len + sizeof(CRLF) - 1;
+    }
+
+    auth_enabled = 0;
+
+    for (m = OC_SMTP_AUTH_PLAIN_ENABLED, i = 0;
+         m <= OC_SMTP_AUTH_CRAM_MD5_ENABLED;
+         m <<= 1, i++)
+    {
+        if (m & conf->auth_methods) {
+            size += 1 + oc_smtp_auth_methods_names[i].len;
+            auth_enabled = 1;
+        }
+    }
+
+    if (auth_enabled) {
+        size += sizeof("250 AUTH") - 1 + sizeof(CRLF) - 1;
+    }
+
+    p = ngx_pnalloc(cf->pool, size);
+    if (p == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    conf->capability.len = size;
+    conf->capability.data = p;
+
+    last = p;
+
+    *p++ = '2'; *p++ = '5'; *p++ = '0'; *p++ = '-';
+    p = ngx_cpymem(p, conf->server_name.data, conf->server_name.len);
+    *p++ = CR; *p++ = LF;
+
+    for (i = 0; i < conf->capabilities.nelts; i++) {
+        last = p;
+        *p++ = '2'; *p++ = '5'; *p++ = '0'; *p++ = '-';
+        p = ngx_cpymem(p, c[i].data, c[i].len);
+        *p++ = CR; *p++ = LF;
+    }
+
+    auth = p;
+
+    if (auth_enabled) {
+        last = p;
+
+        *p++ = '2'; *p++ = '5'; *p++ = '0'; *p++ = ' ';
+        *p++ = 'A'; *p++ = 'U'; *p++ = 'T'; *p++ = 'H';
+
+        for (m = OC_SMTP_AUTH_PLAIN_ENABLED, i = 0;
+             m <= OC_SMTP_AUTH_CRAM_MD5_ENABLED;
+             m <<= 1, i++)
+        {
+            if (m & conf->auth_methods) {
+                *p++ = ' ';
+                p = ngx_cpymem(p, oc_smtp_auth_methods_names[i].data,
+                               oc_smtp_auth_methods_names[i].len);
+            }
+        }
+
+        *p++ = CR; *p = LF;
+
+    } else {
+        last[3] = ' ';
+    }
 
 	return NGX_CONF_OK;
 }

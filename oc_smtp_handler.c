@@ -32,7 +32,7 @@ static u_char  smtp_password[] = "334 UGFzc3dvcmQ6" CRLF;
 static u_char  smtp_invalid_command[] = "500 5.5.1 Invalid command" CRLF;
 //static u_char  smtp_invalid_pipelining[] =
 //   "503 5.5.0 Improper use of SMTP command pipelining" CRLF;
-//static u_char  smtp_invalid_argument[] = "501 5.5.4 Invalid argument" CRLF;
+static u_char  smtp_invalid_argument[] = "501 5.5.4 Invalid argument" CRLF;
 //static u_char  smtp_auth_required[] = "530 5.7.1 Authentication required" CRLF;
 
 
@@ -247,6 +247,12 @@ oc_smtp_init_session(ngx_connection_t *c)
 		oc_smtp_session_internal_server_error(s);
 		return;
 	}
+
+	//初始化收件人列表
+    if (ngx_array_init(&s->smtp_rcpts, c->pool, 1, sizeof(ngx_str_t)) == NGX_ERROR) {
+        oc_smtp_session_internal_server_error(s);
+        return;
+    }
 
 	c->write->handler = oc_smtp_send;
 
@@ -903,6 +909,61 @@ oc_smtp_auth_state(ngx_event_t *rev)
 static ngx_int_t
 oc_smtp_cmd_helo(oc_smtp_session_t *s, ngx_connection_t *c)
 {
+    ngx_str_t                 *arg;
+    oc_smtp_core_srv_conf_t  *cscf;
+
+    if (s->args.nelts != 1) {
+        ngx_str_set(&s->out, smtp_invalid_argument);
+        s->state = 0;
+        return NGX_OK;
+    }
+
+    arg = s->args.elts;
+
+    s->smtp_helo.len = arg[0].len;
+
+    s->smtp_helo.data = ngx_pnalloc(c->pool, arg[0].len);
+    if (s->smtp_helo.data == NULL) {
+        return NGX_ERROR;
+    }
+
+    ngx_memcpy(s->smtp_helo.data, arg[0].data, arg[0].len);
+
+	//清空from
+    ngx_str_null(&s->smtp_from);
+	//清空收件件列表rcpts
+    s->smtp_rcpts.nelts = 0;
+
+    cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
+
+    if (s->command == OC_SMTP_HELO) {
+        s->out = cscf->server_name;
+
+    } else {
+        s->esmtp = 1;
+
+#if (OC_SMTP_SSL)
+
+        if (c->ssl == NULL) {
+            oc_smtp_ssl_conf_t  *sslcf;
+
+            sslcf = oc_smtp_get_module_srv_conf(s, oc_smtp_ssl_module);
+
+            if (sslcf->starttls == OC_SMTP_STARTTLS_ON) {
+                s->out = sscf->starttls_capability;
+                return NGX_OK;
+            }
+
+            if (sslcf->starttls == OC_SMTP_STARTTLS_ONLY) {
+                s->out = sscf->starttls_only_capability;
+                return NGX_OK;
+            }
+        }
+#endif
+
+        s->out = cscf->capability;
+    }
+	
 	return NGX_OK;
 }
 
