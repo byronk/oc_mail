@@ -1,7 +1,7 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_event.h>
-#include <oc_mail.h>
+#include <oc_smtp.h>
 
 
 static char *oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -49,6 +49,7 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	ngx_uint_t                  m,mi;
 	oc_smtp_conf_ctx_t			*ctx;
 	oc_smtp_module_t            *module;
+	ngx_conf_t                   pcf;
 
 	ngx_log_stderr(0, "SMTP conf block");
 
@@ -119,18 +120,25 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 
 	/* parse inside the smtp{} block */
+	pcf = *cf;
+	cf->ctx = ctx;
 
-
-
-
-
-
+	cf->module_type = OC_SMTP_MODULE;
+	cf->cmd_type = OC_SMTP_MAIN_CONF;
 
 	rv = ngx_conf_parse(cf, NULL);
 
 	if (rv != NGX_CONF_OK) {
+		*cf = pcf;
 		return rv;
 	}
+
+	/* init mail{} main_conf's, merge the server{}s' srv_conf's */
+	// todo
+
+	//解析完成，恢复cf的数据
+	*cf = pcf;
+	
 
 	return NGX_CONF_OK;
 }
