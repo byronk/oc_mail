@@ -118,6 +118,7 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	}
 
 
+	/* parse inside the smtp{} block */
 
 
 
