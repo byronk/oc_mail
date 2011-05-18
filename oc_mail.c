@@ -47,18 +47,18 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
 	char                        *rv;
 	ngx_uint_t                  m,mi;
-	oc_mail_conf_ctx_t			*ctx;
-	oc_mail_module_t            *module;
+	oc_smtp_conf_ctx_t			*ctx;
+	oc_smtp_module_t            *module;
 
 	ngx_log_stderr(0, "SMTP conf block");
 
 	//Îªctx·ÖÅä¿Õ¼ä
-	ctx = ngx_pcalloc(cf->pool, sizeof(oc_mail_conf_ctx_t));
+	ctx = ngx_pcalloc(cf->pool, sizeof(oc_smtp_conf_ctx_t));
 	if (ctx == NULL) {
 		return NGX_CONF_ERROR;
 	}
 
-	*(oc_mail_conf_ctx_t **)conf = ctx;
+	*(oc_smtp_conf_ctx_t **)conf = ctx;
 
 	//count the number of the http modules and set up their indices
 	oc_smtp_max_module = 0;

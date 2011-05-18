@@ -1,1 +1,1 @@
-~/test/nginx/sbin/nginx $1
+$HOME/test/nginx/sbin/nginx $1

@@ -10,7 +10,7 @@
 typedef struct {
 	void                  **main_conf;
 	void                  **srv_conf;
-} oc_mail_conf_ctx_t;
+} oc_smtp_conf_ctx_t;
 
 
 typedef struct {
@@ -18,7 +18,7 @@ typedef struct {
 	socklen_t               socklen;
 
 	/* server ctx */
-	oc_mail_conf_ctx_t      *ctx;
+	oc_smtp_conf_ctx_t      *ctx;
 
 	unsigned                bind:1;
 	unsigned                wildcard:1;
@@ -28,15 +28,21 @@ typedef struct {
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
 	unsigned                ipv6only:2;
 #endif
-} oc_mail_listen_t;
+} oc_smtp_listen_t;
 
 typedef struct {
 	void                  **ctx;
 	void                  **main_conf;
 	void                  **srv_conf;
-}  oc_mail_session_t;
+}  oc_smtp_session_t;
 
 #define OC_SMTP_MODULE         0x6C69616D    /* SMTP */
+
+#define OC_SMTP_MAIN_CONF      0x02000000
+#define OC_SMTP_SRV_CONF       0x04000000
+
+#define OC_SMTP_MAIN_CONF_OFFSET  offsetof(oc_smtp_conf_ctx_t, main_conf)
+#define OC_SMTP_SRV_CONF_OFFSET   offsetof(oc_smtp_conf_ctx_t, srv_conf)
 
 typedef struct {
 	void	*(*create_main_conf)(ngx_conf_t *cf);
@@ -44,7 +50,7 @@ typedef struct {
 
 	void    *(*create_srv_conf)(ngx_conf_t *cf);
 	char    *(*merge_srv_conf)(ngx_conf_t *cf, void *prev, void *conf);
-} oc_mail_module_t;
+} oc_smtp_module_t;
 
 
 

@@ -1,1 +1,1 @@
-~/test/nginx/sbin/nginx -s quit
+$HOME/test/nginx/sbin/nginx -s quit
