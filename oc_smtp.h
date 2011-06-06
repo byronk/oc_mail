@@ -51,13 +51,6 @@ typedef struct {
 	void                  **srv_conf;
 }  oc_smtp_session_t;
 
-#define OC_SMTP_MODULE         0x6C69616D    /* SMTP */
-
-#define OC_SMTP_MAIN_CONF      0x02000000
-#define OC_SMTP_SRV_CONF       0x04000000
-
-#define OC_SMTP_MAIN_CONF_OFFSET  offsetof(oc_smtp_conf_ctx_t, main_conf)
-#define OC_SMTP_SRV_CONF_OFFSET   offsetof(oc_smtp_conf_ctx_t, srv_conf)
 
 typedef struct {
 	void	*(*create_main_conf)(ngx_conf_t *cf);
@@ -66,6 +59,27 @@ typedef struct {
 	void    *(*create_srv_conf)(ngx_conf_t *cf);
 	char    *(*merge_srv_conf)(ngx_conf_t *cf, void *prev, void *conf);
 } oc_smtp_module_t;
+
+#define OC_SMTP_MODULE         0x6C69616D    /* SMTP */
+
+#define OC_SMTP_MAIN_CONF      0x02000000
+#define OC_SMTP_SRV_CONF       0x04000000
+
+#define OC_SMTP_MAIN_CONF_OFFSET  offsetof(oc_smtp_conf_ctx_t, main_conf)
+#define OC_SMTP_SRV_CONF_OFFSET   offsetof(oc_smtp_conf_ctx_t, srv_conf)
+
+#define oc_smtp_get_module_ctx(s, module)     (s)->ctx[module.ctx_index]
+#define oc_smtp_set_ctx(s, c, module)         s->ctx[module.ctx_index] = c;
+#define oc_smtp_delete_ctx(s, module)         s->ctx[module.ctx_index] = NULL;
+
+#define oc_smtp_get_module_main_conf(s, module)                             \
+	(s)->main_conf[module.ctx_index]
+#define oc_smtp_get_module_srv_conf(s, module)  (s)->srv_conf[module.ctx_index]
+
+#define oc_smtp_conf_get_module_main_conf(cf, module)                       \
+	((oc_smtp_conf_ctx_t *) cf->ctx)->main_conf[module.ctx_index]
+#define oc_smtp_conf_get_module_srv_conf(cf, module)                        \
+	((oc_smtp_conf_ctx_t *) cf->ctx)->srv_conf[module.ctx_index]
 
 extern ngx_uint_t    oc_smtp_max_module;
 extern ngx_module_t  oc_smtp_core_module;
