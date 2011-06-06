@@ -46,7 +46,7 @@ static char *
 oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
 	char                        *rv;
-	ngx_uint_t                  m,mi;
+	ngx_uint_t                  m,mi,s;
 	oc_smtp_conf_ctx_t			*ctx;
 	oc_smtp_module_t            *module;
 	ngx_conf_t                   pcf;
@@ -136,11 +136,53 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	}
 
 	/* init mail{} main_conf's, merge the server{}s' srv_conf's */
-	// todo
+	cmcf = ctx->main_conf[oc_smtp_core_module.ctx_index];
+	cscfp = cmcf->servers.elts;
+
+	for (m = 0; ngx_modules[m]; m++) {
+		if (ngx_modules[m]->type != OC_SMTP_MODULE) {
+			continue;
+		}
+
+		module = ngx_modules[m]->ctx;
+		mi = ngx_modules[m]->ctx_index;
+
+
+		/* init mail{} main_conf's */
+
+		cf->ctx = ctx;
+
+		if (module->init_main_conf) {
+			rv = module->init_main_conf(cf, ctx->main_conf[mi]);
+			if (rv != NGX_CONF_OK) {
+				*cf = pcf;
+				return rv;
+			}
+		}
+
+		for (s = 0; s < cmcf->servers.nelts; s++) {
+
+			/* merge the server{}s' srv_conf's */
+
+			cf->ctx = cscfp[s]->ctx;
+
+			if (module->merge_srv_conf) {
+				rv = module->merge_srv_conf(cf,
+							ctx->srv_conf[mi],
+							cscfp[s]->ctx->srv_conf[mi]);
+				if (rv != NGX_CONF_OK) {
+					*cf = pcf;
+					return rv;
+				}
+			}
+		}
+	}
+
+
 
 	//解析完成，恢复cf的数据
 	*cf = pcf;
-	
+
 
 	return NGX_CONF_OK;
 }

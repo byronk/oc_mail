@@ -67,6 +67,8 @@ typedef struct {
 	char    *(*merge_srv_conf)(ngx_conf_t *cf, void *prev, void *conf);
 } oc_smtp_module_t;
 
+extern ngx_uint_t    oc_smtp_max_module;
+extern ngx_module_t  oc_smtp_core_module;
 
 
 
