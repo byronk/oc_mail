@@ -199,6 +199,9 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 	ngx_log_stderr(0, "ngx_conf_parse finished");
 	
+	//export timeout value
+	//ngx_log_stderr(0, "time out: %d", (ctx->srv_conf[oc_smtp_core_module.ctx_index])->timeout);
+	
 
 	return NGX_CONF_OK;
 }
