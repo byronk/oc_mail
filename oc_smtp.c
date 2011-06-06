@@ -51,7 +51,7 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	oc_smtp_module_t            *module;
 	ngx_conf_t                   pcf;
 	oc_smtp_core_srv_conf_t   **cscfp;
-	oc_smtp_core_main_conf_t   *cmcf
+	oc_smtp_core_main_conf_t   *cmcf;
 
 	ngx_log_stderr(0, "SMTP conf block");
 

@@ -36,12 +36,6 @@ typedef struct {
 } oc_smtp_core_main_conf_t;
 
 typedef struct {
-	ngx_array_t             servers;     /* oc_smtp_core_srv_conf_t */
-	ngx_array_t             listen;      /* oc_smtp_listen_t */
-} oc_smtp_core_main_conf_t;
-
-
-typedef struct {
 	ngx_msec_t              timeout;
 	ngx_msec_t              resolver_timeout;
 	ngx_flag_t              so_keepalive;
