@@ -63,6 +63,8 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 	*(oc_smtp_conf_ctx_t **)conf = ctx;
 
+	ngx_log_stderr(0, "ctx created ok");
+
 	//count the number of the http modules and set up their indices
 	oc_smtp_max_module = 0;
 	for (m = 0; ngx_modules[m]; m++) {
@@ -72,6 +74,9 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 		ngx_modules[m]->ctx_index = oc_smtp_max_module++;
 	}
+	
+	ngx_log_stderr(0, "SMTP module count: %d", oc_smtp_max_module);
+
 
 	/* the mail main_conf context, it is the same in the all mail contexts */
 
@@ -80,6 +85,9 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	if (ctx->main_conf == NULL) {
 		return NGX_CONF_ERROR;
 	}
+
+	ngx_log_stderr(0, "ctx->main_conf created ok");
+
 
 	/*
 	 *  the mail null srv_conf context, it is used to merge
@@ -91,6 +99,9 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	if (ctx->srv_conf == NULL) {
 		return NGX_CONF_ERROR;
 	}
+
+	ngx_log_stderr(0, "ctx->srv_conf created ok");
+
 
 	/*
 	 *  create the main_conf's, the null srv_conf's, and the null loc_conf's
@@ -135,7 +146,10 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 		return rv;
 	}
 
-	/* init mail{} main_conf's, merge the server{}s' srv_conf's */
+	ngx_log_stderr(0, "ngx_conf_parse smtp{}  ok");
+
+
+	/* init smtp{} main_conf's, merge the server{}s' srv_conf's */
 	cmcf = ctx->main_conf[oc_smtp_core_module.ctx_index];
 	cscfp = cmcf->servers.elts;
 
@@ -183,6 +197,8 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	//解析完成，恢复cf的数据
 	*cf = pcf;
 
+	ngx_log_stderr(0, "ngx_conf_parse finished");
+	
 
 	return NGX_CONF_OK;
 }
