@@ -1,5 +1,9 @@
 ngx_addon_name=oc_smtp_module
-NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/oc_smtp.c $ngx_addon_dir/oc_smtp_core_module.c"
+
+NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/oc_smtp.c"
+NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/oc_smtp_core_module.c"
+NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/oc_smtp_handler.c"
+
 CORE_INCS="$CORE_INCS $ngx_addon_dir"
 
 OC_SMTP_MODULES="oc_smtp_module oc_smtp_core_module"
