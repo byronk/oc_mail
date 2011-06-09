@@ -52,6 +52,7 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	ngx_conf_t                   pcf;
 	oc_smtp_core_srv_conf_t   **cscfp;
 	oc_smtp_core_main_conf_t   *cmcf;
+	oc_smtp_core_srv_conf_t    *cscf;
 
 	ngx_log_stderr(0, "SMTP conf block");
 
@@ -63,7 +64,7 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 	*(oc_smtp_conf_ctx_t **)conf = ctx;
 
-	ngx_log_stderr(0, "ctx created ok");
+	ngx_log_stderr(0, "ctx created ok. %d", ctx);
 
 	//count the number of the http modules and set up their indices
 	oc_smtp_max_module = 0;
@@ -76,6 +77,7 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	}
 	
 	ngx_log_stderr(0, "SMTP module count: %d", oc_smtp_max_module);
+	ngx_log_stderr(0, "smtp core module index: %d", oc_smtp_core_module.ctx_index);
 
 
 	/* the mail main_conf context, it is the same in the all mail contexts */
@@ -201,7 +203,12 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	
 	//export timeout value
 	//ngx_log_stderr(0, "time out: %d", (ctx->srv_conf[oc_smtp_core_module.ctx_index])->timeout);
-	
+	ngx_log_stderr(0, "ctx : %d", ctx);
+	cscf =  cscfp[oc_smtp_core_module.ctx_index];
+
+	ngx_log_stderr(0, "cscf %d", cscf);
+	ngx_log_stderr(0, "time out: %d", cscf->timeout);
+
 
 	return NGX_CONF_OK;
 }

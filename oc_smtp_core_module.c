@@ -129,7 +129,11 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 	oc_smtp_core_srv_conf_t *prev = parent;
 	oc_smtp_core_srv_conf_t *conf = child;
 
+	ngx_log_stderr(0, "conf: %d", conf);
+	ngx_log_stderr(0, "prev: %d", prev);
+
 	ngx_conf_merge_msec_value(conf->timeout, prev->timeout, 60000);
+	ngx_log_stderr(0, "time out: %d", conf->timeout);
 	ngx_conf_merge_msec_value(conf->resolver_timeout, prev->resolver_timeout,
 				30000);
 
