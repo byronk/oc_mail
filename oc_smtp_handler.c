@@ -209,3 +209,47 @@ static void
 oc_smtp_init_session(ngx_connection_t *c)
 {
 }
+
+
+u_char *
+oc_smtp_log_error(ngx_log_t *log, u_char *buf, size_t len)
+{
+	u_char              *p;
+	oc_smtp_session_t  *s;
+	oc_smtp_log_ctx_t  *ctx;
+
+	if (log->action) {
+		p = ngx_snprintf(buf, len, " while %s", log->action);
+		len -= p - buf;
+		buf = p;
+	}
+
+	ctx = log->data;
+
+	p = ngx_snprintf(buf, len, ", client: %V", ctx->client);
+	len -= p - buf;
+	buf = p;
+
+	s = ctx->session;
+
+	if (s == NULL) {
+		return p;
+	}
+
+	p = ngx_snprintf(buf, len, "%s, server: %V",
+				s->starttls ? " using starttls" : "",
+				s->addr_text);
+	len -= p - buf;
+	buf = p;
+
+	if (s->login.len == 0) {
+		return p;
+	}
+
+	p = ngx_snprintf(buf, len, ", login: \"%V\"", &s->login);
+	len -= p - buf;
+	buf = p;
+
+	return p;
+}
+

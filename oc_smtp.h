@@ -104,6 +104,13 @@ typedef struct {
 	void                  **ctx;
 	void                  **main_conf;
 	void                  **srv_conf;
+	ngx_str_t              *addr_text;
+	ngx_connection_t       *connection;
+
+	ngx_str_t               login;
+    ngx_str_t               passwd;
+
+	unsigned                starttls:1;
 }  oc_smtp_session_t;
 
 
@@ -114,6 +121,11 @@ typedef struct {
 	void    *(*create_srv_conf)(ngx_conf_t *cf);
 	char    *(*merge_srv_conf)(ngx_conf_t *cf, void *prev, void *conf);
 } oc_smtp_module_t;
+
+typedef struct {
+	ngx_str_t              *client;
+	oc_smtp_session_t     *session;
+} oc_smtp_log_ctx_t;
 
 #define OC_SMTP_MODULE         0x6C69616D    /* SMTP */
 
@@ -140,5 +152,5 @@ extern ngx_uint_t    oc_smtp_max_module;
 extern ngx_module_t  oc_smtp_core_module;
 
 void oc_smtp_init_connection(ngx_connection_t *c);
-
+u_char *oc_smtp_log_error(ngx_log_t *log, u_char *buf, size_t len);
 #endif
