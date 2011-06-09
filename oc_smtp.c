@@ -5,8 +5,17 @@
 
 
 static char *oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+
 static ngx_int_t oc_smtp_add_ports(ngx_conf_t *cf, ngx_array_t *ports,
 			oc_smtp_listen_t *listen);
+
+static ngx_int_t oc_smtp_add_addrs(ngx_conf_t *cf, oc_smtp_port_t *mport,
+			oc_smtp_conf_addr_t *addr);
+
+static char *oc_smtp_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports);
+
+static ngx_int_t oc_smtp_cmp_conf_addrs(const void *one, const void *two);
+
 
 ngx_uint_t  oc_smtp_max_module;
 
@@ -223,8 +232,9 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 		}
 	}
 
-	return NGX_CONF_OK;
+	return oc_smtp_optimize_servers(cf, &ports);
 }
+
 
 static ngx_int_t
 oc_smtp_add_ports(ngx_conf_t *cf, ngx_array_t *ports,
@@ -305,5 +315,173 @@ found:
 #endif
 
 	return NGX_OK;
+}
+
+static char *
+oc_smtp_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
+{
+	ngx_uint_t             i, p, last, bind_wildcard;
+	ngx_listening_t       *ls;
+	oc_smtp_port_t       *mport;
+	oc_smtp_conf_port_t  *port;
+	oc_smtp_conf_addr_t  *addr;
+
+	port = ports->elts;
+	for (p = 0; p < ports->nelts; p++) {
+
+		ngx_sort(port[p].addrs.elts, (size_t) port[p].addrs.nelts,
+					sizeof(oc_smtp_conf_addr_t), oc_smtp_cmp_conf_addrs);
+
+		addr = port[p].addrs.elts;
+		last = port[p].addrs.nelts;
+
+		/*
+		   * if there is the binding to the "*:port" then we need to bind()
+		   * to the "*:port" only and ignore the other bindings
+		   */
+
+		if (addr[last - 1].wildcard) {
+			addr[last - 1].bind = 1;
+			bind_wildcard = 1;
+
+			bind_wildcard = 0;
+		}
+
+		i = 0;
+
+		while (i < last) {
+
+			if (bind_wildcard && !addr[i].bind) {
+				i++;
+				continue;
+			}
+
+			//创建ngx_listening_t结构，用于监听端口
+			ls = ngx_create_listening(cf, addr[i].sockaddr, addr[i].socklen);
+			if (ls == NULL) {
+				return NGX_CONF_ERROR;
+			}
+
+			ls->addr_ntop = 1;
+			ls->handler = oc_smtp_init_connection;
+			ls->pool_size = 256;
+
+			/* TODO: error_log directive */
+			ls->logp = &cf->cycle->new_log;
+			ls->log.data = &ls->addr_text;
+			ls->log.handler = ngx_accept_log_error;
+#if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
+			ls->ipv6only = addr[i].ipv6only;
+#endif
+
+			mport = ngx_palloc(cf->pool, sizeof(oc_smtp_port_t));
+			if (mport == NULL) {
+				return NGX_CONF_ERROR;
+			}
+
+			ls->servers = mport;
+
+			if (i == last - 1) {
+				mport->naddrs = last;
+
+			} else {
+				mport->naddrs = 1;
+				i = 0;
+			}
+
+			switch (ls->sockaddr->sa_family) {
+#if (NGX_HAVE_INET6)
+				case AF_INET6:
+					if (oc_smtp_add_addrs6(cf, mport, addr) != NGX_OK) {
+						return NGX_CONF_ERROR;
+					}
+					break;
+#endif
+				default: /* AF_INET */
+					if (oc_smtp_add_addrs(cf, mport, addr) != NGX_OK) {
+						return NGX_CONF_ERROR;
+					}
+					break;
+			}
+
+			addr++;
+			last--;
+		}
+	}
+
+	return NGX_CONF_OK;
+}
+
+static ngx_int_t
+oc_smtp_add_addrs(ngx_conf_t *cf, oc_smtp_port_t *mport,
+			oc_smtp_conf_addr_t *addr)
+{
+	u_char              *p;
+	size_t               len;
+	ngx_uint_t           i;
+	oc_smtp_in_addr_t  *addrs;
+	struct sockaddr_in  *sin;
+	u_char               buf[NGX_SOCKADDR_STRLEN];
+
+	mport->addrs = ngx_pcalloc(cf->pool,
+				mport->naddrs * sizeof(oc_smtp_in_addr_t));
+	if (mport->addrs == NULL) {
+		return NGX_ERROR;
+	}
+
+	addrs = mport->addrs;
+
+	for (i = 0; i < mport->naddrs; i++) {
+
+		sin = (struct sockaddr_in *) addr[i].sockaddr;
+		addrs[i].addr = sin->sin_addr.s_addr;
+
+		addrs[i].conf.ctx = addr[i].ctx;
+#if (oc_smtp_SSL)
+		addrs[i].conf.ssl = addr[i].ssl;
+#endif
+
+		len = ngx_sock_ntop(addr[i].sockaddr, buf, NGX_SOCKADDR_STRLEN, 1);
+
+		p = ngx_pnalloc(cf->pool, len);
+		if (p == NULL) {
+			return NGX_ERROR;
+		}
+
+		ngx_memcpy(p, buf, len);
+
+		addrs[i].conf.addr_text.len = len;
+		addrs[i].conf.addr_text.data = p;
+	}
+
+	return NGX_OK;
+}
+
+static ngx_int_t
+oc_smtp_cmp_conf_addrs(const void *one, const void *two)
+{
+	oc_smtp_conf_addr_t  *first, *second;
+
+	first = (oc_smtp_conf_addr_t *) one;
+	second = (oc_smtp_conf_addr_t *) two;
+
+	if (first->wildcard) {
+		/* a wildcard must be the last resort, shift it to the end */
+		return 1;
+	}
+
+	if (first->bind && !second->bind) {
+		/* shift explicit bind()ed addresses to the start */
+		return -1;
+	}
+
+	if (!first->bind && second->bind) {
+		/* shift explicit bind()ed addresses to the start */
+		return 1;
+	}
+
+	/* do not sort by default */
+
+	return 0;
 }
 

@@ -139,6 +139,6 @@ typedef struct {
 extern ngx_uint_t    oc_smtp_max_module;
 extern ngx_module_t  oc_smtp_core_module;
 
-
+void oc_smtp_init_connection(ngx_connection_t *c);
 
 #endif
