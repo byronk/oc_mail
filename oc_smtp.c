@@ -214,6 +214,9 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 		return NGX_CONF_ERROR;
 	}
 
+	listen = cmcf->listen.elts;
+	ngx_log_stderr(0, "listen: %d", cmcf->listen.nelts);
+
 	for (i = 0; i < cmcf->listen.nelts; i++) {
 		if (oc_smtp_add_ports(cf, &ports, &listen[i]) != NGX_OK) {
 			return NGX_CONF_ERROR;

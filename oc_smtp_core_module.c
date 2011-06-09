@@ -222,58 +222,25 @@ oc_smtp_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	return rv;
 }
 
-
 static char *
 oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-	ngx_str_t                  *value;
-	ngx_url_t                   u;
-
-	ngx_log_stderr(0, "Parse SMTP server conf: listen");
-
-
-
-	value = cf->args->elts;
-	u.url = value[1];
-	u.listen = 1;
-
-	if (ngx_parse_url(cf->pool, &u) != NGX_OK) {
-		if (u.err) {
-			ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-						"%s in \"%V\" of the \"listen\" directive",
-						u.err, &u.url);
-		}
-
-		return NGX_CONF_ERROR;
-	}
-
-	ngx_log_stderr(0, "server listen: %s", u.url.data);
-
-
-
-
-	return NGX_CONF_OK;
-}
-
-
-static char *
-oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
-{
-	oc_smtp_core_srv_conf_t  *cscf = conf;
+	//oc_smtp_core_srv_conf_t  *cscf = conf;
 
 	size_t                      len, off;
 	in_port_t                   port;
 	ngx_str_t                  *value;
 	ngx_url_t                   u;
-	ngx_uint_t                  i, m;
+	ngx_uint_t                  i;
 	struct sockaddr            *sa;
 	oc_smtp_listen_t          *ls;
-	oc_smtp_module_t          *module;
 	struct sockaddr_in         *sin;
 	oc_smtp_core_main_conf_t  *cmcf;
 #if (NGX_HAVE_INET6)
 	struct sockaddr_in6        *sin6;
 #endif
+
+	ngx_log_stderr(0, "1");
 
 	value = cf->args->elts;
 
