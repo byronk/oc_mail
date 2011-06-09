@@ -110,7 +110,12 @@ typedef struct {
 	ngx_str_t               login;
     ngx_str_t               passwd;
 
+	ngx_str_t               out;
+	ngx_buf_t              *buffer;
+
 	unsigned                starttls:1;
+	unsigned                quit:1;
+	unsigned                blocked:1;
 }  oc_smtp_session_t;
 
 
@@ -153,4 +158,8 @@ extern ngx_module_t  oc_smtp_core_module;
 
 void oc_smtp_init_connection(ngx_connection_t *c);
 u_char *oc_smtp_log_error(ngx_log_t *log, u_char *buf, size_t len);
+void ngx_mail_send(ngx_event_t *wev);
+
+
+
 #endif

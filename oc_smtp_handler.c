@@ -253,3 +253,67 @@ oc_smtp_log_error(ngx_log_t *log, u_char *buf, size_t len)
 	return p;
 }
 
+void
+oc_smtp_send(ngx_event_t *wev)
+{
+	ngx_int_t                  n;
+	ngx_connection_t          *c;
+	oc_smtp_session_t        *s;
+	oc_smtp_core_srv_conf_t  *cscf;
+
+	c = wev->data;
+	s = c->data;
+
+	if (wev->timedout) {
+		ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
+		c->timedout = 1;
+		oc_smtp_close_connection(c);
+		return;
+	}
+
+	if (s->out.len == 0) {
+		if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
+			oc_smtp_close_connection(c);
+		}
+
+		return;
+	}
+
+	n = c->send(c, s->out.data, s->out.len);
+
+	if (n > 0) {
+		s->out.len -= n;
+
+		if (wev->timer_set) {
+			ngx_del_timer(wev);
+		}
+
+		if (s->quit) {
+			oc_smtp_close_connection(c);
+			return;
+		}
+
+		if (s->blocked) {
+			c->read->handler(c->read);
+		}
+
+		return;
+	}
+
+	if (n == NGX_ERROR) {
+		oc_smtp_close_connection(c);
+		return;
+	}
+
+	/* n == NGX_AGAIN */
+
+	cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
+
+	ngx_add_timer(c->write, cscf->timeout);
+
+	if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
+		oc_smtp_close_connection(c);
+		return;
+	}
+}
+
