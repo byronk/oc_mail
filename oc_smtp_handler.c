@@ -5,6 +5,22 @@
 
 static void oc_smtp_init_session(ngx_connection_t *c);
 
+static ngx_str_t  smtp_internal_server_error = 
+	ngx_string("451 4.3.2 Internal server error" CRLF);
+static ngx_str_t  smtp_unavailable = ngx_string("[UNAVAILABLE]");
+
+/*
+static u_char  smtp_ok[] = "250 2.0.0 OK" CRLF;
+static u_char  smtp_bye[] = "221 2.0.0 Bye" CRLF;
+static u_char  smtp_starttls[] = "220 2.0.0 Start TLS" CRLF;
+static u_char  smtp_username[] = "334 VXNlcm5hbWU6" CRLF;
+static u_char  smtp_password[] = "334 UGFzc3dvcmQ6" CRLF;
+static u_char  smtp_invalid_command[] = "500 5.5.1 Invalid command" CRLF;
+static u_char  smtp_invalid_pipelining[] =
+   "503 5.5.0 Improper use of SMTP command pipelining" CRLF;
+static u_char  smtp_invalid_argument[] = "501 5.5.4 Invalid argument" CRLF;
+static u_char  smtp_auth_required[] = "530 5.7.1 Authentication required" CRLF;
+*/
 
 
 void
@@ -67,12 +83,12 @@ oc_smtp_init_connection(ngx_connection_t *c)
 	if (port->naddrs > 1) {
 
 		/*
-		   * There are several addresses on this port and one of them
-		   * is the "*:port" wildcard so getsockname() is needed to determine
-		   * the server address.
-		   *
-		   * AcceptEx() already gave this address.
-		   */
+		 * There are several addresses on this port and one of them
+		 * is the "*:port" wildcard so getsockname() is needed to determine
+		 * the server address.
+		 *
+		 * AcceptEx() already gave this address.
+		 */
 
 		if (ngx_connection_local_sockaddr(c, NULL, 0) != NGX_OK) {
 			oc_smtp_close_connection(c);
@@ -170,7 +186,7 @@ oc_smtp_init_connection(ngx_connection_t *c)
 
 	c->log_error = NGX_ERROR_INFO;
 
-#if (oc_smtp_SSL)
+#if (OC_SMTP_SSL)
 	{
 		oc_smtp_ssl_conf_t  *sslcf;
 
@@ -208,6 +224,23 @@ oc_smtp_init_connection(ngx_connection_t *c)
 static void
 oc_smtp_init_session(ngx_connection_t *c)
 {
+	oc_smtp_session_t        *s;
+
+	s = c->data;
+
+	s->ctx = ngx_pcalloc(c->pool, sizeof(void *) * oc_smtp_max_module);
+	if (s->ctx == NULL) {
+		oc_smtp_session_internal_server_error(s);
+		return;
+	}
+
+	c->write->handler = oc_smtp_send;
+
+	s->host = smtp_unavailable;
+	oc_smtp_greeting(s, c);
+	
+	return;
+
 }
 
 
@@ -251,6 +284,79 @@ oc_smtp_log_error(ngx_log_t *log, u_char *buf, size_t len)
 	buf = p;
 
 	return p;
+}
+
+void
+oc_smtp_send(ngx_event_t *wev)
+{
+	ngx_int_t                  n;
+	ngx_connection_t          *c;
+	oc_smtp_session_t        *s;
+	oc_smtp_core_srv_conf_t  *cscf;
+
+	c = wev->data;
+	s = c->data;
+
+	if (wev->timedout) {
+		ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
+		c->timedout = 1;
+		oc_smtp_close_connection(c);
+		return;
+	}
+
+	if (s->out.len == 0) {
+		if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
+			oc_smtp_close_connection(c);
+		}
+
+		return;
+	}
+
+	n = c->send(c, s->out.data, s->out.len);
+
+	if (n > 0) {
+		s->out.len -= n;
+
+		if (wev->timer_set) {
+			ngx_del_timer(wev);
+		}
+
+		if (s->quit) {
+			oc_smtp_close_connection(c);
+			return;
+		}
+
+		if (s->blocked) {
+			c->read->handler(c->read);
+		}
+
+		return;
+	}
+
+	if (n == NGX_ERROR) {
+		oc_smtp_close_connection(c);
+		return;
+	}
+
+	/* n == NGX_AGAIN */
+
+	cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
+
+	ngx_add_timer(c->write, cscf->timeout);
+
+	if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
+		oc_smtp_close_connection(c);
+		return;
+	}
+}
+
+void
+oc_smtp_session_internal_server_error(oc_smtp_session_t *s)
+{
+	s->out = smtp_internal_server_error;
+	s->quit = 1;
+
+	oc_smtp_send(s->connection->write);
 }
 
 void

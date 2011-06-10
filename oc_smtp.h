@@ -158,7 +158,8 @@ extern ngx_module_t  oc_smtp_core_module;
 
 void oc_smtp_init_connection(ngx_connection_t *c);
 u_char *oc_smtp_log_error(ngx_log_t *log, u_char *buf, size_t len);
-void ngx_mail_send(ngx_event_t *wev);
+void oc_smtp_send(ngx_event_t *wev);
+void oc_smtp_session_internal_server_error(oc_smtp_session_t *s);
 
 
 
