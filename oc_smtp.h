@@ -22,7 +22,7 @@ typedef struct {
 
 	unsigned                bind:1;
 	unsigned                wildcard:1;
-#if (NGX_MAIL_SSL)
+#if (OC_SMTP_SSL)
 	unsigned                ssl:1;
 #endif
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
@@ -34,7 +34,7 @@ typedef struct {
 typedef struct {
 	oc_smtp_conf_ctx_t    *ctx;
 	ngx_str_t               addr_text;
-#if (NGX_MAIL_SSL)
+#if (OC_SMTP_SSL)
 	ngx_uint_t              ssl;    /* unsigned   ssl:1; */
 #endif
 } oc_smtp_addr_conf_t;
@@ -77,7 +77,7 @@ typedef struct {
 
 	unsigned                bind:1;
 	unsigned                wildcard:1;
-#if (NGX_MAIL_SSL)
+#if (OC_SMTP_SSL)
 	unsigned                ssl:1;
 #endif
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
@@ -95,6 +95,12 @@ typedef struct {
 	ngx_msec_t              resolver_timeout;
 	ngx_flag_t              so_keepalive;
 	ngx_str_t               server_name;
+	
+	ngx_str_t               helo_server_name;
+	ngx_str_t               greeting;
+	size_t                  client_buffer_size;
+	ngx_uint_t              auth_methods;
+	
 	/* server ctx */
 	oc_smtp_conf_ctx_t    *ctx;
 } oc_smtp_core_srv_conf_t;
@@ -105,6 +111,7 @@ typedef struct {
 	void                  **main_conf;
 	void                  **srv_conf;
 	ngx_str_t              *addr_text;
+	ngx_str_t               host;
 	ngx_connection_t       *connection;
 
 	ngx_str_t               login;
@@ -136,6 +143,13 @@ typedef struct {
 
 #define OC_SMTP_MAIN_CONF      0x02000000
 #define OC_SMTP_SRV_CONF       0x04000000
+
+#define OC_SMTP_AUTH_PLAIN_ENABLED     0x0002
+#define OC_SMTP_AUTH_LOGIN_ENABLED     0x0004
+#define OC_SMTP_AUTH_APOP_ENABLED      0x0008
+#define OC_SMTP_AUTH_CRAM_MD5_ENABLED  0x0010
+#define OC_SMTP_AUTH_NONE_ENABLED      0x0020
+
 
 #define OC_SMTP_MAIN_CONF_OFFSET  offsetof(oc_smtp_conf_ctx_t, main_conf)
 #define OC_SMTP_SRV_CONF_OFFSET   offsetof(oc_smtp_conf_ctx_t, srv_conf)

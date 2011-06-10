@@ -13,6 +13,16 @@ static char *oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd,
 			void *conf);
 
 
+static ngx_conf_bitmask_t  oc_smtp_auth_methods[] = {
+    { ngx_string("plain"), OC_SMTP_AUTH_PLAIN_ENABLED },
+    { ngx_string("login"), OC_SMTP_AUTH_LOGIN_ENABLED },
+    { ngx_string("cram-md5"), OC_SMTP_AUTH_CRAM_MD5_ENABLED },
+    { ngx_string("none"), OC_SMTP_AUTH_NONE_ENABLED },
+    { ngx_null_string, 0 }
+};
+
+
+
 static ngx_command_t  oc_smtp_core_commands[] = {
 
 	{ ngx_string("server"),
@@ -49,6 +59,20 @@ static ngx_command_t  oc_smtp_core_commands[] = {
 		OC_SMTP_SRV_CONF_OFFSET,
 		offsetof(oc_smtp_core_srv_conf_t, server_name),
 		NULL },
+		
+	{ ngx_string("smtp_client_buffer"),
+      OC_SMTP_MAIN_CONF|OC_SMTP_SRV_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_size_slot,
+      OC_SMTP_SRV_CONF_OFFSET,
+      offsetof(oc_smtp_core_srv_conf_t, client_buffer_size),
+      NULL },
+
+	{ ngx_string("smtp_auth"),
+      OC_SMTP_MAIN_CONF|OC_SMTP_SRV_CONF|NGX_CONF_1MORE,
+      ngx_conf_set_bitmask_slot,
+      OC_SMTP_SRV_CONF_OFFSET,
+      offsetof(oc_smtp_core_srv_conf_t, auth_methods),
+      &oc_smtp_auth_methods },
 
 	ngx_null_command
 };
@@ -129,13 +153,17 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 	oc_smtp_core_srv_conf_t *prev = parent;
 	oc_smtp_core_srv_conf_t *conf = child;
 
-	ngx_log_stderr(0, "conf: %d", conf);
-	ngx_log_stderr(0, "prev: %d", prev);
+	size_t                     size;
+	u_char                    *p;
 
 	ngx_conf_merge_msec_value(conf->timeout, prev->timeout, 60000);
 	ngx_log_stderr(0, "time out: %d", conf->timeout);
 	ngx_conf_merge_msec_value(conf->resolver_timeout, prev->resolver_timeout,
 				30000);
+
+    ngx_conf_merge_size_value(conf->client_buffer_size,
+                              prev->client_buffer_size,
+                              (size_t) ngx_pagesize);
 
 	ngx_conf_merge_value(conf->so_keepalive, prev->so_keepalive, 0);
 
@@ -145,6 +173,25 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 	if (conf->server_name.len == 0) {
 		conf->server_name = cf->cycle->hostname;
 	}
+
+	//Éú³Égreeting
+	size = sizeof("220	ESMTP ready" CRLF) - 1 + conf->server_name.len;
+	
+	p = ngx_pnalloc(cf->pool, size);
+	if (p == NULL) {
+		return NGX_CONF_ERROR;
+	}
+
+	conf->greeting.len = size;
+	conf->greeting.data = p;
+
+	*p++ = '2'; *p++ = '2'; *p++ = '0'; *p++ = ' ';
+	p = ngx_cpymem(p, conf->server_name.data, conf->server_name.len);
+	ngx_memcpy(p, " ESMTP ready" CRLF, sizeof(" ESMTP ready" CRLF) - 1);
+
+
+	
+	
 
 	return NGX_CONF_OK;
 }
@@ -363,7 +410,7 @@ oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 		}
 
 		if (ngx_strcmp(value[i].data, "ssl") == 0) {
-#if (NGX_MAIL_SSL)
+#if (OC_SMTP_SSL)
 			ls->ssl = 1;
 			continue;
 #else

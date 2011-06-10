@@ -4,6 +4,8 @@
 #include <oc_smtp.h>
 
 static void oc_smtp_init_session(ngx_connection_t *c);
+static void oc_smtp_greeting(oc_smtp_session_t *s, ngx_connection_t *c);
+
 
 static ngx_str_t  smtp_internal_server_error = 
 	ngx_string("451 4.3.2 Internal server error" CRLF);
@@ -359,67 +361,85 @@ oc_smtp_session_internal_server_error(oc_smtp_session_t *s)
 	oc_smtp_send(s->connection->write);
 }
 
-void
-oc_smtp_send(ngx_event_t *wev)
+static void
+oc_smtp_greeting(oc_smtp_session_t *s, ngx_connection_t *c)
 {
-	ngx_int_t                  n;
-	ngx_connection_t          *c;
-	oc_smtp_session_t        *s;
-	oc_smtp_core_srv_conf_t  *cscf;
+    ngx_msec_t                 timeout;
+    oc_smtp_core_srv_conf_t  *cscf;
 
-	c = wev->data;
-	s = c->data;
+    ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+                   "smtp greeting for \"%V\"", &s->host);
 
-	if (wev->timedout) {
-		ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
-		c->timedout = 1;
-		oc_smtp_close_connection(c);
-		return;
-	}
+    cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
+    //sscf = oc_smtp_get_module_srv_conf(s, oc_smtp_smtp_module);
 
-	if (s->out.len == 0) {
-		if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
-			oc_smtp_close_connection(c);
-		}
+    timeout = cscf->timeout;
+    ngx_add_timer(c->read, timeout);
 
-		return;
-	}
+    if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
+        oc_smtp_close_connection(c);
+    }
 
-	n = c->send(c, s->out.data, s->out.len);
+    c->read->handler = oc_smtp_init_protocol;
 
-	if (n > 0) {
-		s->out.len -= n;
+    s->out = cscf->greeting;
 
-		if (wev->timer_set) {
-			ngx_del_timer(wev);
-		}
+    oc_smtp_send(c->write);
+}
 
-		if (s->quit) {
-			oc_smtp_close_connection(c);
-			return;
-		}
 
-		if (s->blocked) {
-			c->read->handler(c->read);
-		}
 
-		return;
-	}
+void
+oc_smtp_init_protocol(ngx_event_t *rev)
+{
+    ngx_connection_t    *c;
+    oc_smtp_session_t  *s;
 
-	if (n == NGX_ERROR) {
-		oc_smtp_close_connection(c);
-		return;
-	}
+    c = rev->data;
 
-	/* n == NGX_AGAIN */
+    c->log->action = "in auth state";
 
-	cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
+    if (rev->timedout) {
+        ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
+        c->timedout = 1;
+        oc_smtp_close_connection(c);
+        return;
+    }
 
-	ngx_add_timer(c->write, cscf->timeout);
+    s = c->data;
 
-	if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
-		oc_smtp_close_connection(c);
-		return;
-	}
+    if (s->buffer == NULL) {
+        if (oc_smtp_create_buffer(s, c) != NGX_OK) {
+            return;
+        }
+    }
+
+    s->mail_state = ngx_smtp_start;
+    c->read->handler = oc_smtp_auth_state;
+
+    oc_smtp_auth_state(rev);
+}
+
+
+
+static ngx_int_t
+oc_smtp_create_buffer(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+    oc_smtp_core_srv_conf_t  *cscf;
+
+    if (ngx_array_init(&s->args, c->pool, 2, sizeof(ngx_str_t)) == NGX_ERROR) {
+        oc_smtp_session_internal_server_error(s);
+        return NGX_ERROR;
+    }
+
+    cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
+
+    s->buffer = ngx_create_temp_buf(c->pool, cscf->client_buffer_size);
+    if (s->buffer == NULL) {
+        oc_smtp_session_internal_server_error(s);
+        return NGX_ERROR;
+    }
+
+    return NGX_OK;
 }
 
