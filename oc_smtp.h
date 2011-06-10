@@ -123,6 +123,13 @@ typedef struct {
 	ngx_array_t             args;
 	ngx_uint_t              command;
 
+	/* used to parse POP3/IMAP/SMTP command */
+    ngx_uint_t              state;
+    u_char                 *cmd_start;
+    u_char                 *arg_start;
+    u_char                 *arg_end;
+    ngx_uint_t              literal_len;
+
 	unsigned                starttls:1;
 	unsigned                quit:1;
 	unsigned                blocked:1;
@@ -170,6 +177,22 @@ typedef enum {
 #define OC_SMTP_AUTH_APOP_ENABLED      0x0008
 #define OC_SMTP_AUTH_CRAM_MD5_ENABLED  0x0010
 #define OC_SMTP_AUTH_NONE_ENABLED      0x0020
+
+#define OC_SMTP_PARSE_INVALID_COMMAND  20
+
+#define OC_SMTP_HELO          1
+#define OC_SMTP_EHLO          2
+#define OC_SMTP_AUTH          3
+#define OC_SMTP_QUIT          4
+#define OC_SMTP_NOOP          5
+#define OC_SMTP_MAIL          6
+#define OC_SMTP_RSET          7
+#define OC_SMTP_RCPT          8
+#define OC_SMTP_DATA          9
+#define OC_SMTP_VRFY          10
+#define OC_SMTP_EXPN          11
+#define OC_SMTP_HELP          12
+#define OC_SMTP_STARTTLS      13
 
 
 #define OC_SMTP_MAIN_CONF_OFFSET  offsetof(oc_smtp_conf_ctx_t, main_conf)

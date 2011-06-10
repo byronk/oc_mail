@@ -10,24 +10,31 @@ static ngx_int_t oc_smtp_create_buffer(oc_smtp_session_t *s, ngx_connection_t *c
 void oc_smtp_init_protocol(ngx_event_t *rev);
 void oc_smtp_auth_state(ngx_event_t *rev);
 
+static ngx_int_t oc_smtp_cmd_helo(oc_smtp_session_t *s, ngx_connection_t *c);
+static ngx_int_t oc_smtp_cmd_auth(oc_smtp_session_t *s, ngx_connection_t *c);
+static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c);
+static ngx_int_t oc_smtp_cmd_starttls(oc_smtp_session_t *s,
+    ngx_connection_t *c);
+static ngx_int_t oc_smtp_cmd_rset(oc_smtp_session_t *s, ngx_connection_t *c);
+static ngx_int_t oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c);
 
 
 static ngx_str_t  smtp_internal_server_error = 
 	ngx_string("451 4.3.2 Internal server error" CRLF);
 static ngx_str_t  smtp_unavailable = ngx_string("[UNAVAILABLE]");
 
-/*
+
 static u_char  smtp_ok[] = "250 2.0.0 OK" CRLF;
 static u_char  smtp_bye[] = "221 2.0.0 Bye" CRLF;
 static u_char  smtp_starttls[] = "220 2.0.0 Start TLS" CRLF;
-static u_char  smtp_username[] = "334 VXNlcm5hbWU6" CRLF;
+//static u_char  smtp_username[] = "334 VXNlcm5hbWU6" CRLF;
 static u_char  smtp_password[] = "334 UGFzc3dvcmQ6" CRLF;
 static u_char  smtp_invalid_command[] = "500 5.5.1 Invalid command" CRLF;
-static u_char  smtp_invalid_pipelining[] =
-   "503 5.5.0 Improper use of SMTP command pipelining" CRLF;
-static u_char  smtp_invalid_argument[] = "501 5.5.4 Invalid argument" CRLF;
-static u_char  smtp_auth_required[] = "530 5.7.1 Authentication required" CRLF;
-*/
+//static u_char  smtp_invalid_pipelining[] =
+//   "503 5.5.0 Improper use of SMTP command pipelining" CRLF;
+//static u_char  smtp_invalid_argument[] = "501 5.5.4 Invalid argument" CRLF;
+//static u_char  smtp_auth_required[] = "530 5.7.1 Authentication required" CRLF;
+
 
 
 void
@@ -452,10 +459,316 @@ oc_smtp_create_buffer(oc_smtp_session_t *s, ngx_connection_t *c)
 }
 
 
+
+ngx_int_t
+oc_smtp_parse_command(oc_smtp_session_t *s)
+{
+    u_char      ch, *p, *c, c0, c1, c2, c3;
+    ngx_str_t  *arg;
+    enum {
+        sw_start = 0,
+        sw_spaces_before_argument,
+        sw_argument,
+        sw_almost_done
+    } state;
+
+    state = s->state;
+
+    for (p = s->buffer->pos; p < s->buffer->last; p++) {
+        ch = *p;
+
+        switch (state) {
+
+        /* SMTP command */
+        case sw_start:
+            if (ch == ' ' || ch == CR || ch == LF) {
+                c = s->buffer->start;
+
+                if (p - c == 4) {
+
+                    c0 = ngx_toupper(c[0]);
+                    c1 = ngx_toupper(c[1]);
+                    c2 = ngx_toupper(c[2]);
+                    c3 = ngx_toupper(c[3]);
+
+                    if (c0 == 'H' && c1 == 'E' && c2 == 'L' && c3 == 'O')
+                    {
+                        s->command = OC_SMTP_HELO;
+
+                    } else if (c0 == 'E' && c1 == 'H' && c2 == 'L' && c3 == 'O')
+                    {
+                        s->command = OC_SMTP_EHLO;
+
+                    } else if (c0 == 'Q' && c1 == 'U' && c2 == 'I' && c3 == 'T')
+                    {
+                        s->command = OC_SMTP_QUIT;
+
+                    } else if (c0 == 'A' && c1 == 'U' && c2 == 'T' && c3 == 'H')
+                    {
+                        s->command = OC_SMTP_AUTH;
+
+                    } else if (c0 == 'N' && c1 == 'O' && c2 == 'O' && c3 == 'P')
+                    {
+                        s->command = OC_SMTP_NOOP;
+
+                    } else if (c0 == 'M' && c1 == 'A' && c2 == 'I' && c3 == 'L')
+                    {
+                        s->command = OC_SMTP_MAIL;
+
+                    } else if (c0 == 'R' && c1 == 'S' && c2 == 'E' && c3 == 'T')
+                    {
+                        s->command = OC_SMTP_RSET;
+
+                    } else if (c0 == 'R' && c1 == 'C' && c2 == 'P' && c3 == 'T')
+                    {
+                        s->command = OC_SMTP_RCPT;
+
+                    } else if (c0 == 'V' && c1 == 'R' && c2 == 'F' && c3 == 'Y')
+                    {
+                        s->command = OC_SMTP_VRFY;
+
+                    } else if (c0 == 'E' && c1 == 'X' && c2 == 'P' && c3 == 'N')
+                    {
+                        s->command = OC_SMTP_EXPN;
+
+                    } else if (c0 == 'H' && c1 == 'E' && c2 == 'L' && c3 == 'P')
+                    {
+                        s->command = OC_SMTP_HELP;
+
+                    } else {
+                        goto invalid;
+                    }
+#if (OC_SMTP_SSL)
+                } else if (p - c == 8) {
+
+                    if ((c[0] == 'S'|| c[0] == 's')
+                        && (c[1] == 'T'|| c[1] == 't')
+                        && (c[2] == 'A'|| c[2] == 'a')
+                        && (c[3] == 'R'|| c[3] == 'r')
+                        && (c[4] == 'T'|| c[4] == 't')
+                        && (c[5] == 'T'|| c[5] == 't')
+                        && (c[6] == 'L'|| c[6] == 'l')
+                        && (c[7] == 'S'|| c[7] == 's'))
+                    {
+                        s->command = OC_SMTP_STARTTLS;
+
+                    } else {
+                        goto invalid;
+                    }
+#endif
+                } else {
+                    goto invalid;
+                }
+
+                switch (ch) {
+                case ' ':
+                    state = sw_spaces_before_argument;
+                    break;
+                case CR:
+                    state = sw_almost_done;
+                    break;
+                case LF:
+                    goto done;
+                }
+                break;
+            }
+
+            if ((ch < 'A' || ch > 'Z') && (ch < 'a' || ch > 'z')) {
+                goto invalid;
+            }
+
+            break;
+
+        case sw_spaces_before_argument:
+            switch (ch) {
+            case ' ':
+                break;
+            case CR:
+                state = sw_almost_done;
+                s->arg_end = p;
+                break;
+            case LF:
+                s->arg_end = p;
+                goto done;
+            default:
+                if (s->args.nelts <= 10) {
+                    state = sw_argument;
+                    s->arg_start = p;
+                    break;
+                }
+                goto invalid;
+            }
+            break;
+
+        case sw_argument:
+            switch (ch) {
+            case ' ':
+            case CR:
+            case LF:
+                arg = ngx_array_push(&s->args);
+                if (arg == NULL) {
+                    return NGX_ERROR;
+                }
+                arg->len = p - s->arg_start;
+                arg->data = s->arg_start;
+                s->arg_start = NULL;
+
+                switch (ch) {
+                case ' ':
+                    state = sw_spaces_before_argument;
+                    break;
+                case CR:
+                    state = sw_almost_done;
+                    break;
+                case LF:
+                    goto done;
+                }
+                break;
+
+            default:
+                break;
+            }
+            break;
+
+        case sw_almost_done:
+            switch (ch) {
+            case LF:
+                goto done;
+            default:
+                goto invalid;
+            }
+        }
+    }
+
+    s->buffer->pos = p;
+    s->state = state;
+
+    return NGX_AGAIN;
+
+done:
+
+    s->buffer->pos = p + 1;
+
+    if (s->arg_start) {
+        arg = ngx_array_push(&s->args);
+        if (arg == NULL) {
+            return NGX_ERROR;
+        }
+        arg->len = s->arg_end - s->arg_start;
+        arg->data = s->arg_start;
+        s->arg_start = NULL;
+    }
+
+    s->state = (s->command != OC_SMTP_AUTH) ? sw_start : sw_argument;
+
+    return NGX_OK;
+
+invalid:
+
+    s->state = sw_start;
+    s->arg_start = NULL;
+
+    return OC_SMTP_PARSE_INVALID_COMMAND;
+}
+
+
+ngx_int_t
+oc_smtp_read_command(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+    ssize_t                    n;
+    ngx_int_t                  rc;
+    ngx_str_t                  l;
+    oc_smtp_core_srv_conf_t  *cscf;
+
+    n = c->recv(c, s->buffer->last, s->buffer->end - s->buffer->last);
+
+    if (n == NGX_ERROR || n == 0) {
+        oc_smtp_close_connection(c);
+        return NGX_ERROR;
+    }
+
+    if (n > 0) {
+        s->buffer->last += n;
+    }
+
+    if (n == NGX_AGAIN) {
+        if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
+            oc_smtp_session_internal_server_error(s);
+            return NGX_ERROR;
+        }
+
+        return NGX_AGAIN;
+    }
+
+    cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
+
+    rc = oc_smtp_parse_command(s);
+
+    if (rc == NGX_AGAIN) {
+
+        if (s->buffer->last < s->buffer->end) {
+            return rc;
+        }
+
+        l.len = s->buffer->last - s->buffer->start;
+        l.data = s->buffer->start;
+
+        ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                      "client sent too long command \"%V\"", &l);
+
+        s->quit = 1;
+
+        return OC_SMTP_PARSE_INVALID_COMMAND;
+    }
+
+    if (rc == OC_SMTP_PARSE_INVALID_COMMAND) {
+        return rc;
+    }
+
+    if (rc == NGX_ERROR) {
+        oc_smtp_close_connection(c);
+        return NGX_ERROR;
+    }
+
+    return NGX_OK;
+}
+
+ngx_int_t
+oc_smtp_cmd_auth_login_username(oc_smtp_session_t *s, ngx_connection_t *c,
+    ngx_uint_t n)
+{
+	return NGX_OK;
+}
+
+ngx_int_t
+oc_smtp_cmd_auth_login_password(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+	return NGX_OK;
+}
+
+ngx_int_t
+oc_smtp_cmd_auth_cram_md5_salt(oc_smtp_session_t *s, ngx_connection_t *c,
+    char *prefix, size_t len)
+{
+	return NGX_OK;
+}
+
+ngx_int_t
+oc_smtp_cmd_auth_cram_md5(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+	return NGX_OK;
+}
+
+ngx_int_t
+oc_smtp_cmd_auth_plain(oc_smtp_session_t *s, ngx_connection_t *c, ngx_uint_t n)
+{
+	return NGX_OK;
+}
+
 void
 oc_smtp_auth_state(ngx_event_t *rev)
 {
-    //ngx_int_t            rc;
+    ngx_int_t            rc;
     ngx_connection_t    *c;
     oc_smtp_session_t  *s;
 
@@ -479,10 +792,147 @@ oc_smtp_auth_state(ngx_event_t *rev)
 
     s->blocked = 0;
 
-	oc_smtp_close_connection(c);
 
-	return;
+    rc = oc_smtp_read_command(s, c);
 
+    if (rc == NGX_AGAIN || rc == NGX_ERROR) {
+        return;
+    }
 
+    ngx_str_set(&s->out, smtp_ok);
+
+    if (rc == NGX_OK) {
+        switch (s->mail_state) {
+
+        case oc_smtp_start:
+
+            switch (s->command) {
+
+            case OC_SMTP_HELO:
+            case OC_SMTP_EHLO:
+                rc = oc_smtp_cmd_helo(s, c);
+                break;
+
+            case OC_SMTP_AUTH:
+                rc = oc_smtp_cmd_auth(s, c);
+                break;
+
+            case OC_SMTP_QUIT:
+                s->quit = 1;
+                ngx_str_set(&s->out, smtp_bye);
+                break;
+
+            case OC_SMTP_MAIL:
+                rc = oc_smtp_cmd_mail(s, c);
+                break;
+
+            case OC_SMTP_RCPT:
+                rc = oc_smtp_cmd_rcpt(s, c);
+                break;
+
+            case OC_SMTP_RSET:
+                rc = oc_smtp_cmd_rset(s, c);
+                break;
+
+            case OC_SMTP_NOOP:
+                break;
+
+            case OC_SMTP_STARTTLS:
+                rc = oc_smtp_cmd_starttls(s, c);
+                ngx_str_set(&s->out, smtp_starttls);
+                break;
+
+            default:
+                rc = OC_SMTP_PARSE_INVALID_COMMAND;
+                break;
+            }
+
+            break;
+
+        case oc_smtp_auth_login_username:
+            rc = oc_smtp_cmd_auth_login_username(s, c, 0);
+
+            ngx_str_set(&s->out, smtp_password);
+            s->mail_state = oc_smtp_auth_login_password;
+            break;
+
+        case oc_smtp_auth_login_password:
+            rc = oc_smtp_cmd_auth_login_password(s, c);
+            break;
+
+        case oc_smtp_auth_plain:
+            rc = oc_smtp_cmd_auth_plain(s, c, 0);
+            break;
+
+        case oc_smtp_auth_cram_md5:
+            rc = oc_smtp_cmd_auth_cram_md5(s, c);
+            break;
+        }
+    }
+
+    switch (rc) {
+
+    case NGX_DONE:
+        oc_smtp_cmd_auth(s, c);
+        return;
+
+    case NGX_ERROR:
+        oc_smtp_session_internal_server_error(s);
+        return;
+
+    case OC_SMTP_PARSE_INVALID_COMMAND:
+        s->mail_state = oc_smtp_start;
+        s->state = 0;
+        ngx_str_set(&s->out, smtp_invalid_command);
+
+        /* fall through */
+
+    case NGX_OK:
+        s->args.nelts = 0;
+        s->buffer->pos = s->buffer->start;
+        s->buffer->last = s->buffer->start;
+
+        if (s->state) {
+            s->arg_start = s->buffer->start;
+        }
+
+        oc_smtp_send(c->write);
+    }
 }
+
+static ngx_int_t
+oc_smtp_cmd_helo(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+	return NGX_OK;
+}
+
+static ngx_int_t 
+oc_smtp_cmd_auth(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+	return NGX_OK;
+}
+
+static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+	return NGX_OK;
+}
+
+static ngx_int_t oc_smtp_cmd_starttls(oc_smtp_session_t *s,
+    ngx_connection_t *c)
+{
+	return NGX_OK;
+}
+
+static ngx_int_t 
+oc_smtp_cmd_rset(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+	return NGX_OK;
+}
+
+static ngx_int_t 
+oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+	return NGX_OK;
+}
+
 
