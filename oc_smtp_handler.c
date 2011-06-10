@@ -29,7 +29,7 @@ static ngx_str_t  smtp_unavailable = ngx_string("[UNAVAILABLE]");
 static u_char  smtp_ok[] = "250 2.0.0 OK" CRLF;
 static u_char  smtp_bye[] = "221 2.0.0 Bye" CRLF;
 static u_char  smtp_starttls[] = "220 2.0.0 Start TLS" CRLF;
-//static u_char  smtp_username[] = "334 VXNlcm5hbWU6" CRLF;
+static u_char  smtp_username[] = "334 VXNlcm5hbWU6" CRLF;
 static u_char  smtp_password[] = "334 UGFzc3dvcmQ6" CRLF;
 static u_char  smtp_invalid_command[] = "500 5.5.1 Invalid command" CRLF;
 //static u_char  smtp_invalid_pipelining[] =
@@ -742,6 +742,83 @@ oc_smtp_read_command(oc_smtp_session_t *s, ngx_connection_t *c)
     return NGX_OK;
 }
 
+
+ngx_int_t
+oc_smtp_salt(oc_smtp_session_t *s, ngx_connection_t *c,
+    oc_smtp_core_srv_conf_t *cscf)
+{
+    s->salt.data = ngx_pnalloc(c->pool,
+                               sizeof(" <18446744073709551616.@>" CRLF) - 1
+                               + NGX_TIME_T_LEN
+                               + cscf->server_name.len);
+    if (s->salt.data == NULL) {
+        return NGX_ERROR;
+    }
+
+    s->salt.len = ngx_sprintf(s->salt.data, "<%ul.%T@%V>" CRLF,
+                              ngx_random(), ngx_time(), &cscf->server_name)
+                  - s->salt.data;
+
+    return NGX_OK;
+}
+
+ngx_int_t
+oc_smtp_auth_parse(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+    ngx_str_t                 *arg;
+
+#if (OC_SMTP_SSL)
+    if (oc_smtp_starttls_only(s, c)) {
+        return OC_SMTP_PARSE_INVALID_COMMAND;
+    }
+#endif
+
+    arg = s->args.elts;
+
+    if (arg[0].len == 5) {
+
+        if (ngx_strncasecmp(arg[0].data, (u_char *) "LOGIN", 5) == 0) {
+
+            if (s->args.nelts == 1) {
+                return OC_SMTP_AUTH_LOGIN;
+            }
+
+            if (s->args.nelts == 2) {
+                return OC_SMTP_AUTH_LOGIN_USERNAME;
+            }
+
+            return OC_SMTP_PARSE_INVALID_COMMAND;
+        }
+
+        if (ngx_strncasecmp(arg[0].data, (u_char *) "PLAIN", 5) == 0) {
+
+            if (s->args.nelts == 1) {
+                return OC_SMTP_AUTH_PLAIN;
+            }
+
+            if (s->args.nelts == 2) {
+                return oc_smtp_cmd_auth_plain(s, c, 1);
+            }
+        }
+
+        return OC_SMTP_PARSE_INVALID_COMMAND;
+    }
+
+    if (arg[0].len == 8) {
+
+        if (s->args.nelts != 1) {
+            return OC_SMTP_PARSE_INVALID_COMMAND;
+        }
+
+        if (ngx_strncasecmp(arg[0].data, (u_char *) "CRAM-MD5", 8) == 0) {
+            return OC_SMTP_AUTH_CRAM_MD5;
+        }
+    }
+
+    return OC_SMTP_PARSE_INVALID_COMMAND;
+}
+
+
 ngx_int_t
 oc_smtp_cmd_auth_login_username(oc_smtp_session_t *s, ngx_connection_t *c,
     ngx_uint_t n)
@@ -978,7 +1055,72 @@ oc_smtp_cmd_helo(oc_smtp_session_t *s, ngx_connection_t *c)
 static ngx_int_t 
 oc_smtp_cmd_auth(oc_smtp_session_t *s, ngx_connection_t *c)
 {
-	return NGX_OK;
+	ngx_int_t				   rc;
+	oc_smtp_core_srv_conf_t  *cscf;
+
+#if (OC_SMTP_SSL)
+	if (oc_smtp_starttls_only(s, c)) {
+		return OC_SMTP_PARSE_INVALID_COMMAND;
+	}
+#endif
+
+	if (s->args.nelts == 0) {
+		ngx_str_set(&s->out, smtp_invalid_argument);
+		s->state = 0;
+		return NGX_OK;
+	}
+
+	rc = oc_smtp_auth_parse(s, c);
+
+	switch (rc) {
+
+	case OC_SMTP_AUTH_LOGIN:
+
+		ngx_str_set(&s->out, smtp_username);
+		s->mail_state = ngx_smtp_auth_login_username;
+
+		return NGX_OK;
+
+	case OC_SMTP_AUTH_LOGIN_USERNAME:
+
+		ngx_str_set(&s->out, smtp_password);
+		s->mail_state = ngx_smtp_auth_login_password;
+
+		return oc_smtp_cmd_auth_login_username(s, c, 1);
+
+	case OC_SMTP_AUTH_PLAIN:
+
+		ngx_str_set(&s->out, smtp_next);
+		s->mail_state = ngx_smtp_auth_plain;
+
+		return NGX_OK;
+
+	case OC_SMTP_AUTH_CRAM_MD5:
+
+		sscf = oc_smtp_get_module_srv_conf(s, oc_smtp_smtp_module);
+
+		if (!(sscf->auth_methods & OC_SMTP_AUTH_CRAM_MD5_ENABLED)) {
+			return OC_SMTP_PARSE_INVALID_COMMAND;
+		}
+
+		if (s->salt.data == NULL) {
+			cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
+
+			if (oc_smtp_salt(s, c, cscf) != NGX_OK) {
+				return NGX_ERROR;
+			}
+		}
+
+		if (oc_smtp_cmd_auth_cram_md5_salt(s, c, "334 ", 4) == NGX_OK) {
+			s->mail_state = ngx_smtp_auth_cram_md5;
+			return NGX_OK;
+		}
+
+		return NGX_ERROR;
+	}
+
+	return rc;
+
 }
 
 static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)

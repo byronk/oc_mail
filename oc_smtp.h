@@ -179,6 +179,13 @@ typedef enum {
 #define OC_SMTP_MAIN_CONF      0x02000000
 #define OC_SMTP_SRV_CONF       0x04000000
 
+#define OC_SMTP_AUTH_PLAIN             0
+#define OC_SMTP_AUTH_LOGIN             1
+#define OC_SMTP_AUTH_LOGIN_USERNAME    2
+#define OC_SMTP_AUTH_APOP              3
+#define OC_SMTP_AUTH_CRAM_MD5          4
+#define OC_SMTP_AUTH_NONE              5
+
 #define OC_SMTP_AUTH_PLAIN_ENABLED     0x0002
 #define OC_SMTP_AUTH_LOGIN_ENABLED     0x0004
 #define OC_SMTP_AUTH_APOP_ENABLED      0x0008
