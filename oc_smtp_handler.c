@@ -1097,14 +1097,13 @@ oc_smtp_cmd_auth(oc_smtp_session_t *s, ngx_connection_t *c)
 
 	case OC_SMTP_AUTH_CRAM_MD5:
 
-		sscf = oc_smtp_get_module_srv_conf(s, oc_smtp_smtp_module);
+		cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
 
-		if (!(sscf->auth_methods & OC_SMTP_AUTH_CRAM_MD5_ENABLED)) {
+		if (!(cscf->auth_methods & OC_SMTP_AUTH_CRAM_MD5_ENABLED)) {
 			return OC_SMTP_PARSE_INVALID_COMMAND;
 		}
 
 		if (s->salt.data == NULL) {
-			cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
 
 			if (oc_smtp_salt(s, c, cscf) != NGX_OK) {
 				return NGX_ERROR;
