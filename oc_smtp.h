@@ -142,6 +142,24 @@ typedef struct {
 	oc_smtp_session_t     *session;
 } oc_smtp_log_ctx_t;
 
+
+typedef enum {
+    oc_smtp_start = 0,
+    oc_smtp_auth_login_username,
+    oc_smtp_auth_login_password,
+    oc_smtp_auth_plain,
+    oc_smtp_auth_cram_md5,
+    oc_smtp_helo,
+    oc_smtp_helo_xclient,
+    oc_smtp_helo_from,
+    oc_smtp_xclient,
+    oc_smtp_xclient_from,
+    oc_smtp_xclient_helo,
+    oc_smtp_from,
+    oc_smtp_to
+} oc_smtp_state_e;
+
+
 #define OC_SMTP_MODULE         0x6C69616D    /* SMTP */
 
 #define OC_SMTP_MAIN_CONF      0x02000000

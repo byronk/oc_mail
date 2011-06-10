@@ -8,6 +8,8 @@ static void oc_smtp_greeting(oc_smtp_session_t *s, ngx_connection_t *c);
 static ngx_int_t oc_smtp_create_buffer(oc_smtp_session_t *s, ngx_connection_t *c);
 
 void oc_smtp_init_protocol(ngx_event_t *rev);
+void oc_smtp_auth_state(ngx_event_t *rev);
+
 
 
 static ngx_str_t  smtp_internal_server_error = 
@@ -374,7 +376,7 @@ oc_smtp_greeting(oc_smtp_session_t *s, ngx_connection_t *c)
                    "smtp greeting for \"%V\"", &s->host);
 
     cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
-    //sscf = oc_smtp_get_module_srv_conf(s, oc_smtp_smtp_module);
+    //sscf = oc_smtp_get_module_srv_conf(s, oc_smtp_module);
 
     timeout = cscf->timeout;
     ngx_add_timer(c->read, timeout);
@@ -388,7 +390,7 @@ oc_smtp_greeting(oc_smtp_session_t *s, ngx_connection_t *c)
     s->out = cscf->greeting;
 
 	//测试用途，完成greeting后就关闭连接
-	s->quit = 1;
+	//s->quit = 1;
 
     oc_smtp_send(c->write);
 }
@@ -420,10 +422,10 @@ oc_smtp_init_protocol(ngx_event_t *rev)
         }
     }
 
-    //s->mail_state = ngx_smtp_start;
-    //c->read->handler = oc_smtp_auth_state;
+    s->mail_state = oc_smtp_start;
+    c->read->handler = oc_smtp_auth_state;
 
-    //oc_smtp_auth_state(rev);
+    oc_smtp_auth_state(rev);
 }
 
 
@@ -447,5 +449,40 @@ oc_smtp_create_buffer(oc_smtp_session_t *s, ngx_connection_t *c)
     }
 
     return NGX_OK;
+}
+
+
+void
+oc_smtp_auth_state(ngx_event_t *rev)
+{
+    //ngx_int_t            rc;
+    ngx_connection_t    *c;
+    oc_smtp_session_t  *s;
+
+    c = rev->data;
+    s = c->data;
+
+    ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0, "smtp auth state");
+
+    if (rev->timedout) {
+        ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
+        c->timedout = 1;
+        oc_smtp_close_connection(c);
+        return;
+    }
+
+    if (s->out.len) {
+        ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0, "smtp send handler busy");
+        s->blocked = 1;
+        return;
+    }
+
+    s->blocked = 0;
+
+	oc_smtp_close_connection(c);
+
+	return;
+
+
 }
 
