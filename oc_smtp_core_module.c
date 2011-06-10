@@ -141,6 +141,7 @@ oc_smtp_core_create_srv_conf(ngx_conf_t *cf)
 	cscf->timeout = NGX_CONF_UNSET_MSEC;
 	cscf->resolver_timeout = NGX_CONF_UNSET_MSEC;
 	cscf->so_keepalive = NGX_CONF_UNSET;
+	cscf->client_buffer_size = NGX_CONF_UNSET_SIZE;
 
 
 	return cscf;
@@ -287,8 +288,6 @@ oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	struct sockaddr_in6        *sin6;
 #endif
 
-	ngx_log_stderr(0, "1");
-
 	value = cf->args->elts;
 
 	ngx_memzero(&u, sizeof(ngx_url_t));
@@ -305,6 +304,13 @@ oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 		return NGX_CONF_ERROR;
 	}
+
+	ngx_log_stderr(0, "parse listen: url: %s", u.url.data);
+	ngx_log_stderr(0, "parse listen: socklen: %d", u.socklen);
+	ngx_log_stderr(0, "parse listen: family: %d", u.family);
+
+	sin = (struct sockaddr_in *)&u.sockaddr;
+	ngx_log_stderr(0, "parse listen: sin port: %d", ntohs(sin->sin_port));	
 
 	cmcf = oc_smtp_conf_get_module_main_conf(cf, oc_smtp_core_module);
 
@@ -360,12 +366,14 @@ oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	/* 以下代码都是对新成员的赋值  */
 	ngx_memcpy(ls->sockaddr, u.sockaddr, u.socklen);
 
+	ls->socklen = u.socklen;
 	ls->wildcard = u.wildcard;
 	ls->ctx = cf->ctx;
 
 	for (i = 2; i < cf->args->nelts; i++) {
 		if (ngx_strcmp(value[i].data, "bind") == 0) {
 			ls->bind = 1;
+			continue;
 		}
 
 		if (ngx_strncmp(value[i].data, "ipv6only=o", 10) == 0) {
@@ -426,6 +434,15 @@ oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 					"the invalid \"%V\" parameter", &value[i]);
 		return NGX_CONF_ERROR;
 	}
+
+	//输出ls的内容
+	ngx_log_stderr(0, "ls: socklen: %d", ls->socklen);
+	ngx_log_stderr(0, "ls: bind: %d", ls->bind);
+	ngx_log_stderr(0, "ls: wildcard: %d", ls->wildcard);
+
+
+	
+
 
 	return NGX_CONF_OK;
 }

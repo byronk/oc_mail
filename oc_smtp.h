@@ -119,6 +119,9 @@ typedef struct {
 
 	ngx_str_t               out;
 	ngx_buf_t              *buffer;
+	ngx_uint_t              mail_state;
+	ngx_array_t             args;
+	ngx_uint_t              command;
 
 	unsigned                starttls:1;
 	unsigned                quit:1;

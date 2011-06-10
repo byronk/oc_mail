@@ -387,6 +387,9 @@ oc_smtp_greeting(oc_smtp_session_t *s, ngx_connection_t *c)
 
     s->out = cscf->greeting;
 
+	//测试用途，完成greeting后就关闭连接
+	s->quit = 1;
+
     oc_smtp_send(c->write);
 }
 
@@ -418,9 +421,9 @@ oc_smtp_init_protocol(ngx_event_t *rev)
     }
 
     //s->mail_state = ngx_smtp_start;
-    c->read->handler = oc_smtp_auth_state;
+    //c->read->handler = oc_smtp_auth_state;
 
-    oc_smtp_auth_state(rev);
+    //oc_smtp_auth_state(rev);
 }
 
 

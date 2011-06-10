@@ -249,8 +249,11 @@ oc_smtp_add_ports(ngx_conf_t *cf, ngx_array_t *ports,
 #if (NGX_HAVE_INET6)
 	struct sockaddr_in6   *sin6;
 #endif
+	ngx_log_stderr(0, "oc_smtp_add_ports");
 
 	sa = (struct sockaddr *) &listen->sockaddr;
+
+	ngx_log_stderr(0, "sa_family: %d", sa->sa_family);
 
 	switch (sa->sa_family) {
 
@@ -288,6 +291,10 @@ oc_smtp_add_ports(ngx_conf_t *cf, ngx_array_t *ports,
 	port->family = sa->sa_family;
 	port->port = p;
 
+	ngx_log_stderr(0, "port->family: %d", port->family);
+	ngx_log_stderr(0, "port->port: %d", port->port);
+	
+
 	if (ngx_array_init(&port->addrs, cf->temp_pool, 2,
 					sizeof(oc_smtp_conf_addr_t))
 				!= NGX_OK)
@@ -304,6 +311,7 @@ found:
 
 	addr->sockaddr = (struct sockaddr *) &listen->sockaddr;
 	addr->socklen = listen->socklen;
+	ngx_log_stderr(0, "addr->socklen: %d", addr->socklen);
 	addr->ctx = listen->ctx;
 	addr->bind = listen->bind;
 	addr->wildcard = listen->wildcard;
@@ -327,6 +335,8 @@ oc_smtp_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
 	oc_smtp_conf_addr_t  *addr;
 
 	port = ports->elts;
+	ngx_log_stderr(0, "port count: %d", ports->nelts);
+	
 	for (p = 0; p < ports->nelts; p++) {
 
 		ngx_sort(port[p].addrs.elts, (size_t) port[p].addrs.nelts,
@@ -334,6 +344,7 @@ oc_smtp_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
 
 		addr = port[p].addrs.elts;
 		last = port[p].addrs.nelts;
+		ngx_log_stderr(0, "last: %d", last);
 
 		/*
 		   * if there is the binding to the "*:port" then we need to bind()
@@ -343,7 +354,7 @@ oc_smtp_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
 		if (addr[last - 1].wildcard) {
 			addr[last - 1].bind = 1;
 			bind_wildcard = 1;
-
+		} else {
 			bind_wildcard = 0;
 		}
 
@@ -357,6 +368,8 @@ oc_smtp_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
 			}
 
 			//创建ngx_listening_t结构，用于监听端口
+			ngx_log_stderr(0, "socklen: %d", addr[i].socklen);
+			
 			ls = ngx_create_listening(cf, addr[i].sockaddr, addr[i].socklen);
 			if (ls == NULL) {
 				return NGX_CONF_ERROR;
