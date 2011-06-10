@@ -5,6 +5,9 @@
 
 static void oc_smtp_init_session(ngx_connection_t *c);
 static void oc_smtp_greeting(oc_smtp_session_t *s, ngx_connection_t *c);
+static ngx_int_t oc_smtp_create_buffer(oc_smtp_session_t *s, ngx_connection_t *c);
+
+void oc_smtp_init_protocol(ngx_event_t *rev);
 
 
 static ngx_str_t  smtp_internal_server_error = 
@@ -414,7 +417,7 @@ oc_smtp_init_protocol(ngx_event_t *rev)
         }
     }
 
-    s->mail_state = ngx_smtp_start;
+    //s->mail_state = ngx_smtp_start;
     c->read->handler = oc_smtp_auth_state;
 
     oc_smtp_auth_state(rev);
