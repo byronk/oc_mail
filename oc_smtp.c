@@ -5,6 +5,8 @@
 
 
 static char *oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+static ngx_int_t oc_smtp_add_ports(ngx_conf_t *cf, ngx_array_t *ports,
+			oc_smtp_listen_t *listen);
 
 ngx_uint_t  oc_smtp_max_module;
 
@@ -46,13 +48,16 @@ static char *
 oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
 	char                        *rv;
-	ngx_uint_t                  m,mi,s;
+	ngx_uint_t                  i, m,mi,s;
 	oc_smtp_conf_ctx_t			*ctx;
 	oc_smtp_module_t            *module;
 	ngx_conf_t                   pcf;
 	oc_smtp_core_srv_conf_t   **cscfp;
 	oc_smtp_core_main_conf_t   *cmcf;
-	oc_smtp_core_srv_conf_t    *cscf;
+	//oc_smtp_core_srv_conf_t    *cscf;
+
+	ngx_array_t                  ports;
+	oc_smtp_listen_t           *listen;
 
 	ngx_log_stderr(0, "SMTP conf block");
 
@@ -201,14 +206,101 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 	ngx_log_stderr(0, "ngx_conf_parse finished");
 	
-	//export timeout value
-	//ngx_log_stderr(0, "time out: %d", (ctx->srv_conf[oc_smtp_core_module.ctx_index])->timeout);
-	ngx_log_stderr(0, "ctx : %d", ctx);
-	cscf =  cscfp[oc_smtp_core_module.ctx_index];
 
-	ngx_log_stderr(0, "cscf %d", cscf);
-	ngx_log_stderr(0, "time out: %d", cscf->timeout);
+	//Add port
+	if (ngx_array_init(&ports, cf->temp_pool, 4, sizeof(oc_smtp_conf_port_t))
+				!= NGX_OK)
+	{
+		return NGX_CONF_ERROR;
+	}
 
+	for (i = 0; i < cmcf->listen.nelts; i++) {
+		if (oc_smtp_add_ports(cf, &ports, &listen[i]) != NGX_OK) {
+			return NGX_CONF_ERROR;
+		}
+	}
 
 	return NGX_CONF_OK;
 }
+
+static ngx_int_t
+oc_smtp_add_ports(ngx_conf_t *cf, ngx_array_t *ports,
+			oc_smtp_listen_t *listen)
+{
+	in_port_t              p;
+	ngx_uint_t             i;
+	struct sockaddr       *sa;
+	struct sockaddr_in    *sin;
+	oc_smtp_conf_port_t  *port;
+	oc_smtp_conf_addr_t  *addr;
+#if (NGX_HAVE_INET6)
+	struct sockaddr_in6   *sin6;
+#endif
+
+	sa = (struct sockaddr *) &listen->sockaddr;
+
+	switch (sa->sa_family) {
+
+#if (NGX_HAVE_INET6)
+		case AF_INET6:
+			sin6 = (struct sockaddr_in6 *) sa;
+			p = sin6->sin6_port;
+			break;
+#endif
+
+		default: /* AF_INET */
+			sin = (struct sockaddr_in *) sa;
+			p = sin->sin_port;
+			break;
+	}
+
+	port = ports->elts;
+	for (i = 0; i < ports->nelts; i++) {
+		if (p == port[i].port && sa->sa_family == port[i].family) {
+
+			/* a port is already in the port list */
+
+			port = &port[i];
+			goto found;
+		}
+	}
+
+	/* add a port to the port list */
+
+	port = ngx_array_push(ports);
+	if (port == NULL) {
+		return NGX_ERROR;
+	}
+
+	port->family = sa->sa_family;
+	port->port = p;
+
+	if (ngx_array_init(&port->addrs, cf->temp_pool, 2,
+					sizeof(oc_smtp_conf_addr_t))
+				!= NGX_OK)
+	{
+		return NGX_ERROR;
+	}
+
+found:
+
+	addr = ngx_array_push(&port->addrs);
+	if (addr == NULL) {
+		return NGX_ERROR;
+	}
+
+	addr->sockaddr = (struct sockaddr *) &listen->sockaddr;
+	addr->socklen = listen->socklen;
+	addr->ctx = listen->ctx;
+	addr->bind = listen->bind;
+	addr->wildcard = listen->wildcard;
+#if (NGX_MAIL_SSL)
+	addr->ssl = listen->ssl;
+#endif
+#if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
+	addr->ipv6only = listen->ipv6only;
+#endif
+
+	return NGX_OK;
+}
+

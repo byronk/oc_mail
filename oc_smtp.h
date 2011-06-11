@@ -30,6 +30,61 @@ typedef struct {
 #endif
 } oc_smtp_listen_t;
 
+
+typedef struct {
+	oc_smtp_conf_ctx_t    *ctx;
+	ngx_str_t               addr_text;
+#if (NGX_MAIL_SSL)
+	ngx_uint_t              ssl;    /* unsigned   ssl:1; */
+#endif
+} oc_smtp_addr_conf_t;
+
+typedef struct {
+	in_addr_t               addr;
+	oc_smtp_addr_conf_t    conf;
+} oc_smtp_in_addr_t;
+
+
+#if (NGX_HAVE_INET6)
+
+typedef struct {
+	struct in6_addr         addr6;
+	oc_smtp_addr_conf_t    conf;
+} oc_smtp_in6_addr_t;
+
+#endif
+
+
+typedef struct {
+	/* oc_smtp_in_addr_t or oc_smtp_in6_addr_t */
+	void                   *addrs;
+	ngx_uint_t              naddrs;
+} oc_smtp_port_t;
+
+
+typedef struct {
+	int                     family;
+	in_port_t               port;
+	ngx_array_t             addrs;       /* array of oc_smtp_conf_addr_t */
+} oc_smtp_conf_port_t;
+
+
+typedef struct {
+	struct sockaddr        *sockaddr;
+	socklen_t               socklen;
+
+	oc_smtp_conf_ctx_t    *ctx;
+
+	unsigned                bind:1;
+	unsigned                wildcard:1;
+#if (NGX_MAIL_SSL)
+	unsigned                ssl:1;
+#endif
+#if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
+	unsigned                ipv6only:2;
+#endif
+} oc_smtp_conf_addr_t;
+
 typedef struct {
 	ngx_array_t             servers;     /* oc_smtp_core_srv_conf_t */
 	ngx_array_t             listen;      /* oc_smtp_listen_t */

@@ -256,3 +256,162 @@ oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 
+static char *
+oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+	oc_smtp_core_srv_conf_t  *cscf = conf;
+
+	size_t                      len, off;
+	in_port_t                   port;
+	ngx_str_t                  *value;
+	ngx_url_t                   u;
+	ngx_uint_t                  i, m;
+	struct sockaddr            *sa;
+	oc_smtp_listen_t          *ls;
+	oc_smtp_module_t          *module;
+	struct sockaddr_in         *sin;
+	oc_smtp_core_main_conf_t  *cmcf;
+#if (NGX_HAVE_INET6)
+	struct sockaddr_in6        *sin6;
+#endif
+
+	value = cf->args->elts;
+
+	ngx_memzero(&u, sizeof(ngx_url_t));
+
+	u.url = value[1];
+	u.listen = 1;
+
+	if (ngx_parse_url(cf->pool, &u) != NGX_OK) {
+		if (u.err) {
+			ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+						"%s in \"%V\" of the \"listen\" directive",
+						u.err, &u.url);
+		}
+
+		return NGX_CONF_ERROR;
+	}
+
+	cmcf = oc_smtp_conf_get_module_main_conf(cf, oc_smtp_core_module);
+
+	ls = cmcf->listen.elts;
+
+	/* 判断有没有重复监听端口 */
+	for (i = 0; i < cmcf->listen.nelts; i++) {
+
+		sa = (struct sockaddr *) ls[i].sockaddr;
+		if (sa->sa_family != u.family) {
+			continue;
+		}
+		switch (sa->sa_family) {
+
+#if (NGX_HAVE_INET6)
+			case AF_INET6:
+				off = offsetof(struct sockaddr_in6, sin6_addr);
+				len = 16;
+				sin6 = (struct sockaddr_in6 *) sa;
+				port = sin6->sin6_port;
+				break;
+#endif
+
+			default: /* AF_INET */
+				off = offsetof(struct sockaddr_in, sin_addr);
+				len = 4;
+				sin = (struct sockaddr_in *) sa;
+				port = sin->sin_port;
+				break;
+		}
+
+		if (ngx_memcmp(ls[i].sockaddr + off, u.sockaddr + off, len) != 0) {
+			continue;
+		}
+
+		if (port != u.port) {
+			continue;
+		}
+
+		ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+					"duplicate \"%V\" address and port pair", &u.url);
+		return NGX_CONF_ERROR;
+	}
+
+	/* 新建一个listen_t并添加到array中 */
+	ls = ngx_array_push(&cmcf->listen);
+	if (ls == NULL) {
+		return NGX_CONF_ERROR;
+	}
+
+	ngx_memzero(ls, sizeof(oc_smtp_listen_t));
+
+	/* 以下代码都是对新成员的赋值  */
+	ngx_memcpy(ls->sockaddr, u.sockaddr, u.socklen);
+
+	ls->wildcard = u.wildcard;
+	ls->ctx = cf->ctx;
+
+	for (i = 2; i < cf->args->nelts; i++) {
+		if (ngx_strcmp(value[i].data, "bind") == 0) {
+			ls->bind = 1;
+		}
+
+		if (ngx_strncmp(value[i].data, "ipv6only=o", 10) == 0) {
+#if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
+			struct sockaddr  *sa;
+			u_char            buf[NGX_SOCKADDR_STRLEN];
+
+			sa = (struct sockaddr *) ls->sockaddr;
+
+			if (sa->sa_family == AF_INET6) {
+
+				if (ngx_strcmp(&value[i].data[10], "n") == 0) {
+					ls->ipv6only = 1;
+
+				} else if (ngx_strcmp(&value[i].data[10], "ff") == 0) {
+					ls->ipv6only = 2;
+
+				} else {
+					ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+								"invalid ipv6only flags \"%s\"",
+								&value[i].data[9]);
+					return NGX_CONF_ERROR;
+				}
+
+				ls->bind = 1;
+
+			} else {
+				len = ngx_sock_ntop(sa, buf, NGX_SOCKADDR_STRLEN, 1);
+
+				ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+							"ipv6only is not supported "
+							"on addr \"%*s\", ignored", len, buf);
+			}
+
+			continue;
+#else
+			ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+						"bind ipv6only is not supported "
+						"on this platform");
+			return NGX_CONF_ERROR;
+#endif
+		}
+
+		if (ngx_strcmp(value[i].data, "ssl") == 0) {
+#if (NGX_MAIL_SSL)
+			ls->ssl = 1;
+			continue;
+#else
+			ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+						"the \"ssl\" parameter requires "
+						"oc_smtp_ssl_module");
+			return NGX_CONF_ERROR;
+#endif
+		}
+
+		/* 解析到这里就是不支持的参数了 */
+		ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+					"the invalid \"%V\" parameter", &value[i]);
+		return NGX_CONF_ERROR;
+	}
+
+	return NGX_CONF_OK;
+}
