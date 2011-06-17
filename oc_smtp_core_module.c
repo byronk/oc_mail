@@ -59,20 +59,20 @@ static ngx_command_t  oc_smtp_core_commands[] = {
 		OC_SMTP_SRV_CONF_OFFSET,
 		offsetof(oc_smtp_core_srv_conf_t, server_name),
 		NULL },
-		
+
 	{ ngx_string("smtp_client_buffer"),
-      OC_SMTP_MAIN_CONF|OC_SMTP_SRV_CONF|NGX_CONF_TAKE1,
-      ngx_conf_set_size_slot,
-      OC_SMTP_SRV_CONF_OFFSET,
-      offsetof(oc_smtp_core_srv_conf_t, client_buffer_size),
-      NULL },
+		OC_SMTP_MAIN_CONF|OC_SMTP_SRV_CONF|NGX_CONF_TAKE1,
+		ngx_conf_set_size_slot,
+		OC_SMTP_SRV_CONF_OFFSET,
+		offsetof(oc_smtp_core_srv_conf_t, client_buffer_size),
+		NULL },
 
 	{ ngx_string("smtp_auth"),
-      OC_SMTP_MAIN_CONF|OC_SMTP_SRV_CONF|NGX_CONF_1MORE,
-      ngx_conf_set_bitmask_slot,
-      OC_SMTP_SRV_CONF_OFFSET,
-      offsetof(oc_smtp_core_srv_conf_t, auth_methods),
-      &oc_smtp_auth_methods },
+		OC_SMTP_MAIN_CONF|OC_SMTP_SRV_CONF|NGX_CONF_1MORE,
+		ngx_conf_set_bitmask_slot,
+		OC_SMTP_SRV_CONF_OFFSET,
+		offsetof(oc_smtp_core_srv_conf_t, auth_methods),
+		&oc_smtp_auth_methods },
 
 	ngx_null_command
 };
@@ -162,9 +162,9 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 	ngx_conf_merge_msec_value(conf->resolver_timeout, prev->resolver_timeout,
 				30000);
 
-    ngx_conf_merge_size_value(conf->client_buffer_size,
-                              prev->client_buffer_size,
-                              (size_t) ngx_pagesize);
+	ngx_conf_merge_size_value(conf->client_buffer_size,
+				prev->client_buffer_size,
+				(size_t) ngx_pagesize);
 
 	ngx_conf_merge_value(conf->so_keepalive, prev->so_keepalive, 0);
 
@@ -176,8 +176,8 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 	}
 
 	//Éú³Égreeting
-	size = sizeof("220	ESMTP ready" CRLF) - 1 + conf->server_name.len;
-	
+	size = sizeof("220  ESMTP ready" CRLF) - 1 + conf->server_name.len;
+
 	p = ngx_pnalloc(cf->pool, size);
 	if (p == NULL) {
 		return NGX_CONF_ERROR;
@@ -189,10 +189,6 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 	*p++ = '2'; *p++ = '2'; *p++ = '0'; *p++ = ' ';
 	p = ngx_cpymem(p, conf->server_name.data, conf->server_name.len);
 	ngx_memcpy(p, " ESMTP ready" CRLF, sizeof(" ESMTP ready" CRLF) - 1);
-
-
-	
-	
 
 	return NGX_CONF_OK;
 }
@@ -441,7 +437,7 @@ oc_smtp_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	ngx_log_stderr(0, "ls: wildcard: %d", ls->wildcard);
 
 
-	
+
 
 
 	return NGX_CONF_OK;
