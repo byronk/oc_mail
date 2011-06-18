@@ -937,7 +937,7 @@ oc_smtp_cmd_helo(oc_smtp_session_t *s, ngx_connection_t *c)
     cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
 
     if (s->command == OC_SMTP_HELO) {
-        s->out = cscf->server_name;
+        s->out = cscf->helo_server_name;
 
     } else {
         s->esmtp = 1;

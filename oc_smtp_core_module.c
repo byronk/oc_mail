@@ -212,7 +212,22 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 	p = ngx_cpymem(p, conf->server_name.data, conf->server_name.len);
 	ngx_memcpy(p, " ESMTP ready" CRLF, sizeof(" ESMTP ready" CRLF) - 1);
 
-	//生成auth capabilities
+	//生成HELO的响应字符串
+    size = sizeof("250 " CRLF) - 1 + conf->server_name.len;
+
+    p = ngx_pnalloc(cf->pool, size);
+    if (p == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    conf->helo_server_name.len = size;
+    conf->helo_server_name.data = p;
+
+    *p++ = '2'; *p++ = '5'; *p++ = '0'; *p++ = ' ';
+    p = ngx_cpymem(p, conf->server_name.data, conf->server_name.len);
+    *p++ = CR; *p = LF;
+
+	//生成auth capabilities，用于EHLO
 	if (conf->capabilities.nelts == 0) {
         conf->capabilities = prev->capabilities;
     }
