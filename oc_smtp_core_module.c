@@ -190,6 +190,7 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
                            |OC_SMTP_AUTH_PLAIN_ENABLED
                            |OC_SMTP_AUTH_LOGIN_ENABLED));
 
+	ngx_log_stderr(0, "auth_methods: %d", conf->auth_methods);
 
 	ngx_conf_merge_str_value(conf->server_name, prev->server_name, "");
 

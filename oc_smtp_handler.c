@@ -17,6 +17,8 @@ static ngx_int_t oc_smtp_cmd_starttls(oc_smtp_session_t *s,
     ngx_connection_t *c);
 static ngx_int_t oc_smtp_cmd_rset(oc_smtp_session_t *s, ngx_connection_t *c);
 static ngx_int_t oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c);
+static void oc_smtp_smtp_log_rejected_command(oc_smtp_session_t *s, ngx_connection_t *c,
+    char *err);
 
 
 static ngx_str_t  smtp_internal_server_error = 
@@ -33,7 +35,8 @@ static u_char  smtp_invalid_command[] = "500 5.5.1 Invalid command" CRLF;
 //static u_char  smtp_invalid_pipelining[] =
 //   "503 5.5.0 Improper use of SMTP command pipelining" CRLF;
 static u_char  smtp_invalid_argument[] = "501 5.5.4 Invalid argument" CRLF;
-//static u_char  smtp_auth_required[] = "530 5.7.1 Authentication required" CRLF;
+static u_char  smtp_auth_required[] = "530 5.7.1 Authentication required" CRLF;
+static u_char  smtp_bad_sequence[] = "503 5.5.1 Bad sequence of commands" CRLF;
 
 
 
@@ -975,6 +978,66 @@ oc_smtp_cmd_auth(oc_smtp_session_t *s, ngx_connection_t *c)
 
 static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 {
+	 u_char					   ch;
+	 ngx_str_t					l;
+	 ngx_uint_t 				i;
+	 oc_smtp_core_srv_conf_t  *cscf;
+	
+	 cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
+	
+	 if (!(cscf->auth_methods & OC_SMTP_AUTH_NONE_ENABLED)) {
+		 oc_smtp_smtp_log_rejected_command(s, c, "client was rejected: \"%V\"");
+		 ngx_str_set(&s->out, smtp_auth_required);
+		 return NGX_OK;
+	 }
+	
+	 /* auth none */
+	
+	 if (s->smtp_from.len) {
+		 ngx_str_set(&s->out, smtp_bad_sequence);
+		 return NGX_OK;
+	 }
+	
+	 l.len = s->buffer->last - s->buffer->start;
+	 l.data = s->buffer->start;
+	
+	 for (i = 0; i < l.len; i++) {
+		 ch = l.data[i];
+	
+		 if (ch != CR && ch != LF) {
+			 continue;
+		 }
+	
+		 l.data[i] = ' ';
+	 }
+	
+	 while (i) {
+		 if (l.data[i - 1] != ' ') {
+			 break;
+		 }
+	
+		 i--;
+	 }
+	
+	 l.len = i;
+	
+	 s->smtp_from.len = l.len;
+	
+	 s->smtp_from.data = ngx_pnalloc(c->pool, l.len);
+	 if (s->smtp_from.data == NULL) {
+		 return NGX_ERROR;
+	 }
+	
+	 ngx_memcpy(s->smtp_from.data, l.data, l.len);
+	
+	 ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+					"smtp mail from:\"%V\"", &s->smtp_from);
+	
+	 ngx_str_set(&s->out, smtp_ok);
+	
+	 return NGX_OK;
+
+
 	return NGX_OK;
 }
 
@@ -996,4 +1059,33 @@ oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c)
 	return NGX_OK;
 }
 
+static void
+oc_smtp_smtp_log_rejected_command(oc_smtp_session_t *s, ngx_connection_t *c,
+    char *err)
+{
+    u_char      ch;
+    ngx_str_t   cmd;
+    ngx_uint_t  i;
+
+    if (c->log->log_level < NGX_LOG_INFO) {
+        return;
+    }
+
+    cmd.len = s->buffer->last - s->buffer->start;
+    cmd.data = s->buffer->start;
+
+    for (i = 0; i < cmd.len; i++) {
+        ch = cmd.data[i];
+
+        if (ch != CR && ch != LF) {
+            continue;
+        }
+
+        cmd.data[i] = '_';
+    }
+
+    cmd.len = i;
+
+    ngx_log_error(NGX_LOG_INFO, c->log, 0, err, &cmd);
+}
 
