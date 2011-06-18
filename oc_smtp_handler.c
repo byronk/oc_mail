@@ -780,9 +780,12 @@ oc_smtp_auth_state(ngx_event_t *rev)
     ngx_int_t            rc;
     ngx_connection_t    *c;
     oc_smtp_session_t  *s;
+	oc_smtp_core_srv_conf_t  *cscf;
+
 
     c = rev->data;
     s = c->data;
+	cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
 
     ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0, "smtp auth state");
 
@@ -807,6 +810,8 @@ oc_smtp_auth_state(ngx_event_t *rev)
     if (rc == NGX_AGAIN || rc == NGX_ERROR) {
         return;
     }
+
+	ngx_add_timer(rev, cscf->timeout);
 
     ngx_str_set(&s->out, smtp_ok);
 
