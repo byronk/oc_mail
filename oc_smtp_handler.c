@@ -811,6 +811,7 @@ oc_smtp_auth_state(ngx_event_t *rev)
         return;
     }
 
+	//只要有正常的数据，就重置timer，重新计时
 	ngx_add_timer(rev, cscf->timeout);
 
     ngx_str_set(&s->out, smtp_ok);
