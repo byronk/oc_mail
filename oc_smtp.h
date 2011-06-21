@@ -118,10 +118,13 @@ typedef struct {
 
 	ngx_str_t               login;
     ngx_str_t               passwd;
+	ngx_uint_t				login_attempt;
 
 	ngx_str_t               out;
 	ngx_buf_t              *buffer;
 	ngx_uint_t              mail_state;
+	ngx_str_t               salt;
+	
 	ngx_array_t             args;
 	ngx_uint_t              command;
 	
@@ -140,6 +143,8 @@ typedef struct {
 	unsigned                quit:1;
 	unsigned                blocked:1;
 	unsigned                esmtp:1;
+	unsigned				authorised: 1;
+	unsigned                auth_method:3;
 }  oc_smtp_session_t;
 
 
@@ -178,6 +183,13 @@ typedef enum {
 
 #define OC_SMTP_MAIN_CONF      0x02000000
 #define OC_SMTP_SRV_CONF       0x04000000
+
+#define OC_SMTP_AUTH_PLAIN             0
+#define OC_SMTP_AUTH_LOGIN             1
+#define OC_SMTP_AUTH_LOGIN_USERNAME    2
+#define OC_SMTP_AUTH_APOP              3
+#define OC_SMTP_AUTH_CRAM_MD5          4
+#define OC_SMTP_AUTH_NONE              5
 
 #define OC_SMTP_AUTH_PLAIN_ENABLED     0x0002
 #define OC_SMTP_AUTH_LOGIN_ENABLED     0x0004
