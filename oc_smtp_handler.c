@@ -1152,7 +1152,8 @@ oc_smtp_auth_state(ngx_event_t *rev)
 
 		case NGX_DONE:
 			oc_smtp_auth(s, c);
-			//oc_smtp_send(c->write);
+			//todo: 这里应该在oc_smtp_auth()中处理
+			oc_smtp_send(c->write);
 			return;
 
 		case NGX_ERROR:
@@ -1388,6 +1389,56 @@ oc_smtp_cmd_rset(oc_smtp_session_t *s, ngx_connection_t *c)
 static ngx_int_t 
 oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c)
 {
+	u_char		ch;
+	ngx_str_t	l, *rcpt;
+	ngx_uint_t	i;
+
+	if (s->smtp_from.len == 0) {
+		ngx_str_set(&s->out, smtp_bad_sequence);
+		return NGX_OK;
+	}
+
+	l.len = s->buffer->last - s->buffer->start;
+	l.data = s->buffer->start;
+
+	for (i = 0; i < l.len; i++) {
+		ch = l.data[i];
+
+		if (ch != CR && ch != LF) {
+			continue;
+		}
+
+		l.data[i] = ' ';
+	}
+
+	while (i) {
+		if (l.data[i - 1] != ' ') {
+			break;
+		}
+
+		i--;
+	}
+
+	l.len = i;
+
+	rcpt = ngx_array_push(&s->smtp_rcpts);
+	rcpt->len = l.len;
+	rcpt->data = ngx_pnalloc(c->pool, l.len);
+
+	if (rcpt->data == NULL) {
+		return NGX_ERROR;
+	}
+
+	ngx_memcpy(rcpt->data, l.data, l.len);
+
+	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				   "smtp rcpt to:\"%V\"", rcpt);
+
+	//s->auth_method = NGX_MAIL_AUTH_NONE;
+
+	//return NGX_DONE;
+
+
 	return NGX_OK;
 }
 
