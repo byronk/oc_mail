@@ -1,6 +1,7 @@
 HELO byronk
 EHLO byronk
 
+
 MAIL FROM:<Smith@USC-ISIF.ARPA>
 RCPT TO:<Jones@BBN-UNIX.ARPA>
 RCPT TO:<Green@BBN-UNIX.ARPA>
@@ -9,5 +10,6 @@ DATA
 RSET
 QUIT
 
+AUTH LOGIN
 Ynlyb25r
 MTIzNDU=

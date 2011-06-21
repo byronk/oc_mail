@@ -766,15 +766,11 @@ oc_smtp_salt(oc_smtp_session_t *s, ngx_connection_t *c,
 void
 oc_smtp_auth(oc_smtp_session_t *s, ngx_connection_t *c)
 {
+	ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0, "oc_smtp_auth");
 	s->args.nelts = 0;
 	s->buffer->pos = s->buffer->start;
 	s->buffer->last = s->buffer->start;
 	s->state = 0;
-
-	//如果正在计时，则停止计时器，不计算timeout
-	if (c->read->timer_set) {
-		ngx_del_timer(c->read);
-	}
 
 	s->login_attempt++;
 
@@ -1156,6 +1152,7 @@ oc_smtp_auth_state(ngx_event_t *rev)
 
 		case NGX_DONE:
 			oc_smtp_auth(s, c);
+			//oc_smtp_send(c->write);
 			return;
 
 		case NGX_ERROR:
