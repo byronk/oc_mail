@@ -1,0 +1,587 @@
+SMTP Authentication [Tutorial]
+
+(last edit: 2010-08-24 -- this page exists since 2003)
+
+Introduction
+
+Request for Comments
+
+Consequences for the ESMTP procedure
+
+Authentication Framework
+
+Authentication and Transport Layer Security
+
+Usernames & Realms
+
+Summary & Conclusion
+
+Implementations for Qmail
+
+Patches and Programs
+
+Setting up qmail for SMTP Authentication
+
+Introduction
+
+SMTP Authentication is a scheme which was introduced in 1999 by J. Myers of Netscape Communications and fiGnally released as RFC 2554 ("SMTP Service Extension for Authentication"). It is partly based on the SMTP Service Extensions as defined in RFC 1869. Most modern SMTP implementations support SMTP Authentication, whereas Qmail 1.03 does not (without a patch). On the other hand, a lot of Mail User Agents (MUAs) - which include a SMTP Client - make SMTP Authentication available (e.g. Outlook, Eudora, Netscape, Mozilla, The Bat! ....).
+
+SMTP Authentication is advertised by the SMTP Authentication server, requires a client to authenticate, while finally both parties have to mutually accept and support the chosen authentication procedure. Originally invented as a Host-to-Host protocol, with SMTP Authentication, a User has to identify itself and after successful authentication, reception/transmission of his/her emails is granted.
+
+RFC 2554 does not explicitly state, what advantages/benefits a user has being SMTP authenticated, except that optionally a "security layer" for subsequent protocol interactions may be chosen. However, in common sense, an authenticated user is allowed for email transmission not only to the target system (the SMTP server) but rather anywhere. In Qmail terminology, this is equivalent to a 'relayclient'.
+
+SMTP Authentication takes some ideas of the Simple Authentication and Security Layer (SASL) and does not fit well into the SMTP scheme, as will be outlined in this document.
+
+Request For Comments
+
+In order to understand SMTP Authentication, one has to work through several RFC, which seem to be unrelated in the first place. On the other hand, the most recent SMTP RFC 5321 and it's predecessor RFC 2821 (by John Klensin) now at least mentions the existance of SMTP extensions and - by the same token - requiring the 'EHLO' command introducing a SMTP transaction. Even after all those years, it really would be time, to have more coherent SMTP RFCs; see also the comments of Dan Bernstein about the " Klensin RFC". (E)SMTP is not that such a difficult protocol to not at least cover the basics in one document - while removing obsolete commands like VRFY and EXPN.
+
+RFC 1869 defines a protocol extension (ESMTP) for the SMTP dialog, in order to indicate extended capabilities by the SMTP Server and/or to transmit additional SMTP protocol information by the SMTP client. SMTP servers, supporting ESMTP, have to use the keyword 'EHLO' in the SMTP greeting. 
+The SMTP client may only use those extensions the server offers. By construction, the server may send the offered extensions as ESMTP verb anywhere in the SMTP dialog or as part of the 'MAIL FROM: ' or 'RCPT TO: ' command. 
+A typical use is 'MAIL FROM: <foobar@example.com> SIZE=1512'. In this sample, 'SIZE' is the ESMTP keyword, '1512' is the ESMTP value and the whole term 'SIZE=1512' is the ESMTP parameter (RFC 1870 " SMTP Service Extension for Message Size Declaration").
+RFC 1869 employes two different schemes to promote the ESMTP value:
+As ESMTP verb, it uses "SIZE xxxxx",
+whereas in the 'MAIL FROM: <foobar@example.com> SIZE=1512' command, the ESMTP keyword and it's value are joined by a "=" equal sign.
+Every ESMTP keyword has to be registered at the IANA.
+
+In this scope, RFC 2554 describes SMTP Authentication with the particular ESMTP keyword 'AUTH'. 
+In the text passages and samples of RFC 2554, the ESMTP Auth values 'CRAM-MD5', 'DIGEST-MD5', and 'PLAIN' are mentioned (which correspond to particular authentication methods or mechanisms) but no reference to any of those is provided.
+The attempt, to find the meaning of the above mentioned ESMTP AUTH mechanisms in RFC 2222 "Simple Authentication and Security Layer (SASL)" fails. 
+In this RFC (also published by John Myers), only the overall SASL mechanism is outlined and how to register a new "SASL mechanism name". However, the SASL mechanisms 'KERBEROS_V4', 'GSSAPI', and 'SKEY' are defined.
+In order to succeed, one has to dig out RFC 1731 "IMAP4 Authentication Mechanisms" and RFC 2195 "IMAP/POP Authorize Extension for Simple Challenge/Response".
+Here, some practical samples for authentication are given based upon the POP3 and IMAP4 protocol. Those RFC are originated as well by John Myers. RFC 2060 "INTERNET MESSAGE ACCESS PROTOCOL - VERSION 4rev1" (John Myers, sic) tells about the IMAP4 'LOGIN' command. Too bad; this has nothing in common with the ESMTP 'AUTH LOGIN' method.
+The way the actual ESMTP Auth values are en-/decoded, corresponds to the BASE64 scheme, which was first described in RFC 1113 "Privacy Enhancement for Internet Electronic Mail: Part I -- Message Encipherment and Authentication Procedures"; though not explicitly declared as BASE64 here (but later called it that). 
+RFC 2045 "Multipurpose Internet Mail Extensions (MIME) Part One: Format of Internet Message Bodies" gives an identical outline of the BASE64 "alphabet" in section 6.8.
+If in addition the Challenge/Response authentication mechanism is used, one has to become familiar with the so-called HMAC procedure from RFC 2104 "HMAC: Keyed-Hashing for Message Authentication" and in addition according to RFC 1321 with "The MD5 Message-Digest Algorithm" as an en-/decryption scheme.
+Until recently, there was no common understanding, how to propagate the SMTP Authentication information in the email's header. With RFC 3848 however, there exist at least a minimal scheme, including a particular keyword ESMTPA in the last included "Received:" header line in case of an authenticated SMTP session.
+Setting up MTAs thus they will accept only SMTP authenticated emails on a dedicated port has been poured into RFC 4409 which defines the Mail SUBMISSION port 587.
+Just recently, R. Siemborski from Google and A. Melnikov from ISODE (wow, they still exist) have updated Meyer's SMTP Auth RFC: RFC 4945. Essentially, there is not much new information in this RFC compared to RFC 2554, however, it hooks together SMTP Authentication with Transport Layer Security (TLS) as defined in RFC 3207.
+Consequences for the ESMTP procedure
+
+While SMTP Authentication has been introduced solely as a service extension, it actually touches the (E)SMTP protocol substantially, which is not yet fully documented/discussed.
+
+ESMTP Authentication turns SMTP from a host-to-host to a user-to-host protocol. 
+In consequence, some protocol features, which make sense while two MTAs communicate need to be refined or dropped, like mailinglist expansion (VRFY and EXPN).
+More subtle, SMTP Authentication (as well as STARTTLS RFC 3207) move ESMTP from a transaction oriented protocol now into a both session and transaction aware protocol.
+ESMTP session state
+
+While within SMTP basically only a transaction is usefully defined, we now need to care about an ESMTP session:
+
+A SMTP transaction starts with the client's MAIL FROM: command, and finishes with the client's final .<CRLF> command as last LINE during the DATA phase, acknowledged by the server with the 250 reply code.
+An ESMTP session begins with the EHLO command, includes STARTTLS and AUTH commands, as well as any SMTP transactions and finishes with the server's final QUITcommand.
+Thus, RFC 2821 requires from the ESMTP server to preserve a certain session state. Further, sessions states are ordered: The STARTTLS state needs to be established before the AUTH state is processed.
+In contrast, some session state informations need to be cleared by the server, in case the ESMTP client issues a RST command.
+The current Klensin ESMTP draft RFC 5321 takes partially care of this. Obviously, Klensin did not read his own RFC carefully, because it mixes in the attached sample (taken almost unaltered from RFC 821) happily the terminology 'transaction' and 'session' (Appendix D.1.).
+
+However, the conceptual change is more severe. The problem here becomes virulent in case of an ESMTP reply code. Does the server's response now belong to a transaction, or the entire session ? One particular problem is the ESMTP error code 552:
+
+552 Requested mail action aborted: exceeded storage allocation
+
+552 Too much mail data (deprecated)
+
+Clearly, the first case is mailbox (and thus transaction) specific, while the second case is a policy limit as discussed further in RFC 5321:
+
+4.5.3.1.10. Too Many Recipients Code
+
+RFC 821 [1] incorrectly listed the error where an SMTP server
+exhausts its implementation limit on the number of RCPT commands
+("too many recipients") as having reply code 552. The correct reply
+code for this condition is 452.
+
+It is obvious that the current scheme of (E)SMTP command related reply codes without telling whether it belongs to the session or a transction needs more refinement. Let's hope for RFC 10821.
+
+Mail Submission [RFC 4409]
+
+While the standard SMTP port 25 is used for unrestricted email reception, in particular DSL and cable providers would like to setup their MTAs for their customers on a different port and requiring ESMTP Authentication. According to RFC 4409, the mail submission port defaults to 587. A MTA listening on that port will demand a successful SMTP authentication prior of accepting the MAIL FROM: command; otherwise an error is issued:
+
+530 Authorization required (#5.7.1)
+
+Apart from that behaviour, an ESMTP MTA listing on the submission port is required to only implement (offer) a subset of ESMTP commands. This effectively separates the tasks of a (E)SMTP server to accept
+
+(E)SMTP transactions from unprivileged hosts -- or --
+ESMTP sessions only from privileged users.
+Authentication Framework
+
+It seems to be clear by know, that SMTP Authentication depends upon a patchwork of mechanisms/methods/procedures scattered over a wide range of RFC. Now, we have to go on and discuss the SMTP Authentication framework and will realize, that things are even more complicated.
+
+Server Announcement
+
+We take a sample from RFC 2554. "S:" denotes the SMTP Server and "C:" the SMTP Client.
+
+S: 220 smtp.example.com ESMTP server ready
+C: EHLO jgm.example.com
+S: 250-smtp.example.com
+S: 250 AUTH CRAM-MD5 DIGEST-MD5
+C: AUTH FOOBAR
+S: 504 Unrecognized authentication type.
+C: AUTH CRAM-MD5
+S: 334
+PENCeUxFREJoU0NnbmhNWitOMjNGNndAZWx3b29kLmlubm9zb2Z0LmNvbT4=
+C: ZnJlZCA5ZTk1YWVlMDljNDBhZjJiODRhMGMyYjNiYmFlNzg2ZQ==
+S: 235 Authentication successful.
+
+Here, RFC 2554 uses multiple values for the keyword AUTH as ESMTP command, which is allow by RFC 1869, however broke the parsing of several ESMTP client implementations. One work around is, to add artificially a "=" (equal sign) between the AUTH keyword and the value, eg. AUTH=LOGIN.
+
+AUTH mechanisms
+
+There are three authentication mechanisms widely used for SMTP Authentication. In the documentation coming with the qmail-smtp-auth-patch by Krzysztof Dabrowski, an overview of MUAs and their AUTH mechanisms is provided (which I updated):
+
+ Client	Version	Login	Plain	CRAM-MD5
+ Eudora	 4.x, 5.x, 6.x,7.x	
+ x
+ 	
+ x
+ The Bat !	 1.39	
+ x
+ 	
+ x
+ Thunderbird	 1.5	
+ x
+ 	
+ x
+ Outlook Express	 4	
+ x
+ 	 
+ Outlook Express	 5	
+ x
+ 	 
+ Outlook	 2000	
+ x
+ 	 
+ Netscape	 4.x	
+ x
+ x
+ 
+ Netscape	 4.0x	
+ x
+ 	 
+ Pegasus Mail	 4.1x	
+ x
+ 	
+ x
+ Mulberry	 4.x	 	
+ x
+ x
+AUTH LOGIN
+
+The most common 'AUTH LOGIN' mechanism looks like this
+
+S: 220 esmtp.example.com ESMTP
+C: ehlo client.example.com
+S: 250-esmtp.example.com
+S: 250-PIPELINING
+S: 250-8BITMIME
+S: 250-SIZE 255555555
+S: 250 AUTH LOGIN PLAIN CRAM-MD5
+C: auth login
+S: 334 VXNlcm5hbWU6
+C: avlsdkfj
+S: 334 UGFzc3dvcmQ6
+C: lkajsdfvlj
+S: 535 authentication failed (#5.7.1)
+
+From all the ESMTP Authentication mechanisms the offered, the client selects 'auth login'. The ESMTP server issues then a '334 VXNlcm5hbWU6' where 'VXNlcm5hbWU6' is a BASE64 encoded string 'Username:'. The client provides the BASE64 encoded user name and the sever responses with the request for the 'Password:' ('334 UGFzc3dvcmQ6'). In the sample above, random input is given and the server finally rejects the authentication request.
+
+AUTH PLAIN
+
+According to IANA's documentation, the PLAIN Authentication is defined in RFC 2245 "Anonymous SASL Mechanism". However, a more useful explanation of the PLAIN Authentication can be found in RFC 2595 "Using TLS with IMAP, POP3 and ACAP" (chapter 6):
+
+"The mechanism consists of a single message from the client to the server. The client sends the authorization identity (identity to login as), followed by a US-ASCII NULL character, followed by the authentication identity (identity whose password will be used), followed by a US-ASCII NULL character, followed by the clear-text password. The client may leave the authorization identity empty to indicate that it is the same as the authentication identity."
+
+In other words, the correct form of the AUTH PLAIN value is 'authid\0userid\0passwd' where '\0' is the null byte.
+
+Some ESMTP AUTH PLAIN implementations don't follow that procedure completely. We see that in the trace using Netscape's 4.8 MUA connecting to a modified Qmail 1.03 to do PLAIN authentication:
+
+C: ehlo client.example.com
+S: 220-esmtp.example.com
+C: AUTH PLAIN dGVzdAB0ZXN0AHRlc3RwYXNz
+S: 235 ok, go ahead (#2.0.0)
+C: RCPT TO:<....>
+
+In this sample, the user name was 'test' and the password 'testpass'. Here, the Netscape client immediately blasts the authentication information to the server (including the artificial authorization identity 'test') without waiting for the server to announce his SMTP Auth capabilites.
+
+AUTH CRAM-MD5
+
+While for AUTH PLAIN and LOGIN clear user names and password are transmitted, things go significantly more secure with the CRAM-MD5 authentication mechanism. As already mentioned in it's name, CRAM-MD5 combines a Challenge/Response mechanism to exchange information and a (cryptographic) Message Digest 5 algorithm to hash important information.
+
+I use an example based on a posting of Markus Stumpf to the Qmail mailing list. A typical ESMTP AUTH CRAM-MD5 dialog starts like this:
+
+S: 220 popmail.space.net ESMTP
+C: ehlo client.example.com
+S: 250-popmail.space.net
+S: 250-PIPELINING
+S: 250-8BITMIME
+S: 250-SIZE 0
+S: 250 AUTH CRAM-MD5
+C: auth cram-md5
+S: 334 PDI0NjA5LjEwNDc5MTQwNDZAcG9wbWFpbC5TcGFjZS5OZXQ+
+C: dGltIGI5MTNhNjAyYzdlZGE3YTQ5NWI0ZTZlNzMzNGQzODkw
+
+Unlike AUTH LOGIN, the server's response is now a one-time BASE64 encoded 'challenge'. The challenge 'PDI0NjA5LjEwNDc5MTQwNDZAcG9wbWFpbC5TcGFjZS5OZXQ+' translates to '<24609.1047914046@popmail.Space.Net>'. The leading and trailing brackets ('<', '>') are mandatory, as well the portion of the challenge which provides the hostname after the '@'. '24609.1047914046' is a random string, typically build from the 'pid' and the current time stamp to make that challenge unique.
+
+The client's reponse includes both the username and the digest. While the user name is transmitted in clear text (but of course BASE64 encoded), the server's challenge is used by the client to generate a 'digest' from the challenge and the password (which is commonly called 'secret' or 'shared secret' in this context) and reads as:
+tim b913a602c7eda7a495b4e6e7334d3890
+The 'shared secret' following the username with an additional space is computed employing the following MD5 hashing algorithm:
+digest = MD5(('secret' XOR opad), MD5(('secret' XOR ipad), challenge))
+
+If both the ESMTP server and the client 'share' the same challenge and secret, the user may now be authenticated successfully by means of the transmitted and BASE 64 encoded 'user name' and 'digest'.
+
+The transmission of the password (the secret) is now replaced by the digest. Though the digest is calculated by means of the challenge and the secret, which by itself is send in cleartext, it is (by our current understanding) practically impossible to reconstructed the secret; except for dictionary attacks:
+
+The secret is very effectively scrambled by the challenge and
+we use the avalanche effect of the hash function.
+AUTH parameter as part of the 'MAIL FROM:' command
+
+According to RFC 2554, authentication information can optionally provided as ESMTP AUTH parameter with a single value in the 'MAIL FROM:' command. The ESMTP AUTH parameter has to be used in the following way:
+
+C: MAIL FROM:<e=mc2@example.com> AUTH=e+3Dmc2@example.com
+S: 250 OK
+
+Here, the AUTH value has to be encoded inside an "xtext" as described in RFC 1891 "SMTP Service Extension for Delivery Status Notifications". RFC 2554 discusses the use of the optional AUTH parameter to the 'MAIL FROM:' command in the context of a "trusted environment to communicate the authentication of individual messages". It actually requires the proliferation of the AUTH information to another MTA (Mail Transfer Agent; eg. email gateway) as AUTH parameter when relaying the message to any server which supports the AUTH extension. In case the authentication is to weak, the Server should set 'AUTH=<>' as parameter to the 'MAIL FROM:' command.
+
+I am not aware, that any MUA implementation using the latter scheme however, some MTA (eg. Postfix) support it.
+
+Qmail 1.03, and in particular qmail-smtpd has no understanding of any parameters in the 'MAIL FROM:' command; it lacks a qualified ESMTP support in that respect. This holds in addition for the ESMTP 'SIZE' announcement (RFC1870), which was partially recovered by Chris Harris' SIZE extension.
+My current SMTP-Authentication patch for qmail-smtpd introduces a complete and extensible 'MAIL FROM:' parameter parser and treats the provided AUTH parameter as $TCPREMOTEINFO.
+
+Authentication State
+
+As outlined, RFC 2554 allows two distinct usages of the ESMTP AUTH extension:
+
+AUTH parameter exchange as part of the SMTP dialog (as shown above).
+AUTH as ESMTP parameter in the 'MAIL FROM:' command.
+Clearly, this has a significant impact on the authentication state itself. The first approach is actually equivalent with an authenticated SMTP session, while the second is effectively the authentication of the provided 'MAIL FROM:' sender and serves as 'informational' data. Unfortunately, RFC 2554 does not give any hints what an "authenticated" state really means. There is a common sense, that an authenticated user is allowed for unrestricted relaying.
+
+In case the authentication information is transmitted as extension to the 'MAIL FROM:' command, one may treat that equivalently with having an additional 'tcpremoteinfo' - usually provided by means of the 'ident' protocol.
+
+Authentication Aborts
+
+The Client may cancel the authentication request, sending simply a '*' to the server. The server must reject the AUTH procedure and replying the SMTP protocol error '501'. However, the server has to cache the authentication method in order to preserve the state.
+
+Authentication Failures
+
+The server may reject the AUTH request by the client with the following response codes:
+
+534 Authentication mechanism is to weak
+538 Encryption required for requested authentication mechanism
+454 Temporary authentication failure
+530 Authentication required
+After a failed ESMTP request, the server has to reset it's state tables and the client may either provide the correct information, or may chose a different authentication mechanism, or may go on in un-authenticated state.
+
+Authentication proliferation
+
+In general, SMTP Authentication allows a one-hop User-to-MTA authentication. An interesting case is to discuss Authentication proliferation. Let's first define what we are talking about:
+
+Typically, a User receives emails by means of the protocols POP3 or IMAP4. For sending, a useful approach would be, that the User - the email originator - sets up an email client (ie. Outlook) for SMTP Authentication and first connects to the Principal-MTA. Here, the user-id and password is stored; which is typically the same as the one used for the POP3/IMAP4 account. In this case, the Principal-MTA acts as SMTP-Relay. Now, we have User-to-MTA Authentication.
+It may be necessary to obey SMTP Authentication to the recipient's MTA or a further internal SMTP-Gateway, which connects to the Internet. Thus, we are talking about User-to-Principal-MTA-to-MTA SMTP traffic with the requirement of an authenticated communication chain.
+What shall this be good for? We have seen, that SMTP Authentication serves mainly to allow unrestricted relaying. With an End-to-End authentication, two additional aims could be achieved:
+
+The authenticity of the message itself (the content of the email) can be guaranteed,
+The uniqueness and authenticity of the email's originator (the provided Mail From: <Return-Path>) can be ensured.
+The latter is a requirement for the first, since it enables to reject emails with forged/spoofed "Return-Path" addresses.
+
+In order to maintain an authentication chain for the User's MUA, not only the user-id and password has to be proliferated, but rather in addition the "Return-Path" address. In this respect, the Mail From: <Return-Path> acts as authorization information.
+Ironically, this concept was already introduced for the AUTH PLAIN authentication scheme (as discussed above) and later dropped. Unfortunately, with today's SMTP Authentication, an Authentication proliferation is not possible without changing the standard.
+Today, we see a huge activity to demand authentication in email traffic, in order to reduce the spam load. As outlined, ensuring authentication for emails is to weak to reduce spam; additionally, qualified authorization information has to be included.
+
+Authentication information in the email "Received:" header [RFC 3848]
+
+One - actually inadequate - attempt in this direction is to add authentication information into the email header, which is required by RFC 3848. The standard SMTP Authentication patches for qmail-smtpd incude the authenticated user equivalent to the tcpremoteinfo in the Received header:
+
+Received: from xdsl-81-173-228-159.netcologne.de (HELO mail.fehnet.net) (erwin@fehcom.net@81.173.228.159) 
+by hamburg134 with SMTP; 23 Jan 2005 11:53:28 -0000
+
+Though the information erwin@fehcom.net@81.173.228.159 is rather precise, it lacks the knowledge, how it is derived. RFC 3848 requires a different notation, which is incorporated in my most recent SMTP authentication patches for qmail:
+
+Received: from xdsl-81-173-228-159.netcologne.de (HELO mail.fehnet.net) (erwin@fehcom.net@81.173.228.159) 
+by hamburg134 with ESMTPA; 23 Jan 2005 13:32:13 -0000
+
+The keyword ESMTPA denotes "ESMTP Authentication" and thus the information presented can be clearly interpreted. However, the quality of this information can not be trusted, if it does not originate from the last receiving host.
+Some Anti-Spam programs, like SpamAssassin begin to use this information including it in the spam-weight calculation of the message. As pointed out by Dary C.W. O'Shea (Committer of the Apache SpamAssassin) the "trust boundary extension", which deals with the interpretation of the email header, works in a top-down approach, in order to verify the integrity of the presented information.
+Since any email header can be forged easily, additional checks for each SMTP connection have to be facilitated, in order to minimize any potential forgery. Thus, the basic problem remains to derive trust-worth information from a per-se un-trusty environment.
+
+Authentication and Transport Layer Security [RFC 4954]
+
+RFC 4945 is very strict about the use of unprotected Userids/Passwords during the SMTP Auth dialoge:
+
+If an implementation supports SASL mechanisms that are vulnerable to passive eavesdropping attacks (such as [PLAIN]), then the implementation MUST support at least one configuration where these SASL mechanisms are not advertised or used without the presence of an external security layer such as [TLS].
+Essentially, this REQUIRES from any ESMTP client and server:
+To support at least CRAM-MD5, DIGEST-MD5, or any other C/R method for authentication over un-encrypted lines.
+To allow AUTH PLAIN and/or AUTH LOGIN only in conjunction with SMTPS/STARTTLS.
+Further:
+If an SMTP client is willing to use SASL PLAIN over TLS to authenticate to the SMTP server, the client verifies the server certificate according to the rules of [X509]. If the server has not provided any certificate, or if the certificate verification fails, the client MUST NOT attempt to authenticate using the SASL PLAIN mechanism.
+After a successful [TLS] negotiation, the client MUST check its understanding of the server hostname against the server's identity as presented in the server Certificate message, in order to prevent man-in-the-middle attacks. If the match fails, the client MUST NOT attempt to authenticate using the SASL PLAIN mechanism. Matching is performed according to the following rules:
+
+The client MUST use the server hostname it used to open the connection as the value to compare against the server name as any form of the server hostname derived from an insecure remote source (e.g., insecure DNS lookup). CNAME canonicalization is not done.
+If a subjectAltName extension of type dNSName is present in the certificate, it SHOULD be used as the source of the server's identity.
+See RFC 4945: 14. Additional Requirements When Using SASL PLAIN over TLS
+
+Actually, I don't have the faintest idea, why this very strict recommendation (which demands a server validation by means of DNS) is part of this standard and is not expressed/referenced elsewhere. 
+Ironically, the RFC fails to clearly define what the 'hostname' of the server is and how to determine this from a 'secure remote source' (never heard of MX records ?).
+
+Usernames & Realms
+
+Ideally, we want a user to identify him/herself with a common username and password for all email applications. Apart from SMTP Authentication, which is for sending only, we need to provide access for the user to his own mailbox by means of
+
+a POP3 server, in addition to
+an IMAP4 server, as well as thru
+a Webmail interface.
+Perhaps, the mailbox is part of a virtual domain run by Interseven's Vpopmail or Bruce Guenther's vmailmgr. Apart from Dan Bernstein's qmail-pop3d POP3 server, usually either Binc or Dovecot is used for IMAP4 access.
+All those products have a different understanding where to store the usernames/passwords and how to use them, as we will see.
+
+Usernames
+
+If we talk about a 'username' for SMTP authentication, we usually have in mind a typical username like 'alice' or 'bob'. According to RFC 821 the 'local part' of the email address is the RFC821Mailbox name as provided in the standard LDAP scheme.
+For an email address 'alice@example.com' simply the local part 'alice' is the username used for authentication.
+
+From a security point of view this is quite dangerous:
+
+Email addresses are public. If the local part of the email address is used as authentication information, this can be considered as substantial data leakage.
+For authentication purpose, apart from the 'username' and 'password', we could check for the provided email address as well, which enhances the entropy of the identification string; see for example 'Auth PLAIN'.
+In addition, a 'username' could be complex. Instead of a simple name, white spaces and other characters could be used, depending on the implementation. My latest SMTP Authentication patches for Qmail allows 'usernames' with white spaces, like 'guess who'.
+Realms
+
+While the local part of the email address corresponds to the 'mailbox', the domain part is often considered a realm (this wording is taken from the RADIUS protocol).
+In general, for a domain 'example.com' a user 'bob' could exist. For another domain 'foo.bar' the same username could be acceptable. The authentication works, if we provide in addition the 'realm' as discriminating information. In case the user does not provide his 'realm' while logging in, the server has to artificially add his known 'realms' (= domains) as hint in order to allow a successful authentication.
+
+User Database
+
+There is very little common understanding, where to place the user data base for SMTP Authentication and how to construct it.
+
+SMTP Authentication does not provide constraints on the username nor it does on the password.
+Thus, the username can be 'complex', including in particular white spaces; so the password does.
+In order to parse the Unix /etc/passwd or shadow password file one has to be root. Dan Bernstein's qmail-pop3d implementation copes with this. The additional qmail-popup program (running under root) executes checkpassword, which - having the user successfully authenticated - calls qmail-pop3d.
+Other implementation place the SASL user database under /etc in a flat file, ie. Krysztof Dabrowski's cmd5checkpw which doesn't even provide any security mechanism to protect it's content (user name/password) except the basic Unix tools chown'ing the file.
+In a multi domain environment it might be necessary to include the domain name into the SMTP Auth user name; but not all MUAs support it. Usually, the SMTP Auth user name is provided my the MUA to the SMTP server without the domain suffix.
+Qmail allows to build a database for fast lookup by means of the qmail-users mechanism. There is no glue, how to enhance this mechanism to allow SMTP Authentication for the users defined therein.
+Apart from those details, the SMTP Auth user database could be a "local" database (Oracle, Mysql, Postgres) or could be "remotely" accessible by means of a LDAP lookup against a "centralized" database.
+
+However, the main task is to maintain a consistent user/password database for email:
+
+Should the user name for SMTP Authentication coincide with an email account (ie. name of the mailbox)?
+What about a possible domain suffix (Vpopmail's vpasswd requires this)?
+Should the SMTP Auth 'secret' be the same as the POP3/IMAP4 password?
+How to deal with circumstances, where the SMTP server is different host wrt. the POP3/IMAP4 server?
+Format of the stored password
+
+There are several ways to use the password for authentication purposes.
+
+The easiest method is to simply transmit the password for authentication purpose. Of course, this is the most dangerous method and only healthy over encrypted channels like TLS connections.
+To cope with that, instead of the password a checksum is used. For instance computed as MD5 or SHA-1 hash, stored in this format in the database and used for authentication instead of the password itself.
+In spite of the available rainbow tables, in particular the common MD5 hash is not a reliable choice to protect the password.
+Therefore, the CRAM-MD5 algorithm is used, which provides a scrambled and with the challenge salted one-time hash value of the authentication information as a digest.
+While in the first cases the password could be persistantly stored in the database encrypted (i.e. by the Unix crypt or at least hashed), in order to calculate the digest the password has be kept in a plain format.
+Summary & Conclusion
+
+Impact for the ESMTP Protocol
+
+We have seen by now:
+
+By construction, RFC 2554 is inconsistent with RFC 821,
+while changing (E)SMTP from a transaction into a sesssion oriented protocol,
+does not allow authentication proliferation,
+employs two inconsistent schemes for SMTP Authentication and fails to define, what it means to be SMTP Authenticated (for the server as well for the client)
+uses multiple ESMTP AUTH value advertisements when used as ESMTP verb,
+with two different presentations, depending whether promoted as ESMTP verb or as extension to the "MAIL FROM:" command (with and without the mandatory "=" between the ESMTP keyword and the value);
+includes two different methods how to en/decode the ESMTP value for AUTH (7 bit ASCII vs. "xtext").
+What is ESMTP Authentication good for ?
+
+The main reason is to allow unrestricted relaying of emails for particular Users.
+SMTP Authentication is an administrative tool for the email manager to control the behavior of his/her MTA (Message Transfer Agent).
+
+Thus, SMTP Authentication complements/substitutes other administrative means to enable a controlled usage of the email system. Other means are for instance:
+
+Sender based: Realtime Blocking List (RBL) available for instance with Dan Bernstein's rblsmtpd.
+User/Sender based: Bruce Guenter's relay-control extension for Qmail (POP-before-SMTP).
+Message based: Tagged Message Digest Agent (TMDA).
+Recipient based: Whitelisting of recipients (eg. my RECIPIENTS extension for Qmail).
+Most of those tools based on the knowledge of the IP/FQDN of the peer host, or - like my SPAMCONTROL patch - employ checks on the SMTP envelope information. Mostly, checks on the IP/FQDN/SMTP envelope have precedence over SMTP Authentication.
+
+Therefore, SMTP Authentication is an additional approach based on a User identification/authentication and is particularly well suited to support roaming Users.
+Providing Mail Submission is certainly well suited for ISPs to control emails thru their systems, though it significant violates the principals of network traffic neutrality since it typically will inhibit to operate an own SMTP server running on port 25.
+
+Implementations for Qmail
+
+There exist two major implementation concepts to be used in conjunction with SMTP Authentication:
+
+Internal: The Cyrus SASL library
+External: Pluggable Authentication Module (PAM)
+Using Cyrus SASL authentication is done against the SASL database 'sasldb'. Entries (ie. the user base) there in are modified by means of the command 'saslpasswd'. The Cyrus SASL library supports different authentication methods, like LOGIN, CRAM-MD5, and others. In particular, a PAM may be referenced as external authentication method.
+
+The Pluggable Authentication Module (which actually never matured as RFC) is a more general framework where the user lookup is done against an arbitrary external module - the PAM. The basic idea is, to transmit authentication information from the network (ie. via qmail-smtpd) to the PAM. The PAM checks the validity of the authentication information on it's own behalf and and exits either with return code '0' in case of successful authentication or with '1' (or non-zero value else), if the authentication failed for some reason.
+Of course, the structure of authentication information provided has to be mutually agreed upon. In general, we have authentication information of type 'login' and of type 'challenge/response' (C/R). In case of SMTP Authentication, the ESMTP AUTH keywords the server advertises and the capability of the PAM have to coincide.
+
+Checkpassword Interface
+
+As a generalization of the PLAIN authentication method, Dan Bernstein has defined a checkpassword interface to be used in particular for the combination qmail-pop3d and the auxiliary PAM checkpassword.
+
+"checkpassword provides a simple, uniform password-checking interface to all root applications. It is suitable for use by applications such as login, ftpd, and pop3d."
+
+"checkpassword reads descriptor 3 through end of file and then closes descriptor 3. There must be at most 512 bytes of data before end of file. The information supplied on descriptor 3 is a login name terminated by \0, a password terminated by \0, a timestamp terminated by \0, and possibly more data. There are no other restrictions on the form of the login name, password, and timestamp. If the password is unacceptable, checkpassword exits 1. If checkpassword is misused, it may instead exit 2. If there is a temporary problem checking the password, checkpassword exits 111."
+
+The advantage of the checkpassword interface is to be simply applicable for most authentication methods like CRAM-MD5 and for instance the POP3 APOP mechanism. In case of CRAM-MD5, the checkpassword string is:
+
+userid\0digest\0challenge\0
+
+Though Bernstein's checkpassword program is only suited for a local user lookup (via /etc/passwd or shadow passwd) and therefore requires to run under root, it's interface definition is widely deployed eg. in Vpopmail's vchkpwd.
+
+It should be noted, that checkpassword itself calls another (child-) program, typically qmail-pop3d. For SMTP Authentication this becomes obsolete, however the child program has to be supplied; otherwise the user validation will fail. A common choice is the program true (available as /bin/true or /usr/bin/true) which exits always '0'.
+
+qmail-smtpd
+
+According to the Russell Nelson's web site www.qmail.org, there are several SMTP Authentication patches available to qmail-smtpd:
+
+"Mrs. Brisby's" implementation can be seen as a starting point for that development (and supports PLAIN and LOGIN),
+now mostly superseded with Krysztof Dabrowski's (and Eric M. Johnston) qmail-smtpd-auth-0.31 patch to include support for CRAM-MD5 with an additional cmd5checkpw PAM. Unfortunately, though wide-spread, Krysztof Dabrowski's SMTP-Auth patch breaks the checkpassword interface for CRAM-MD5. Instead of transmitting the sequence 'userid\0password\0challenge\0' it uses 'userid\0challenge\0password\0'. Another obstacle is to close (like 'qmail-popup') unnecessarily file descriptor 2 (FD 2). This inhibits a common logging to STDERR. Also, the unconditional close of FD 3 (to provide the AUTH information to the PAM) conflicts with reading control/morercpthosts.cdb. Further, there are some problems decoding BASE64.
+qmail-remote
+
+The choices become very slim regarding a SMTP Authentication for qmail-remote:
+
+The first patch originates from Jay Soffian and was "finally touched" by Robert Sanders.
+Bjoern Kalkbrenner (the URL mentioned on qmail.org doesn't exist any more) has made significant modifications (in particular added a BASE64 conversion for the provided user name and the password) in his version qmail-smtp-auth-send-0.0.1.tar.gz.
+Both version employ the ESMTP AUTH parameter as part of the 'MAIL FROM:' command; as has been discussed above; though with a wrong syntax and the email address instead the user name. Again, there is no good understanding what an "authentication state" may be and how to glue SMTP Authentication for (emails received by) qmail-smtpd and (send by) qmail-remote. The concept introduced in RFC 2554 may me useful for monolithic SMTP implementations like sendmail, but is very hard to sustain in cases where multiple tasks/users are involved.
+
+Qmail Authentication patch
+
+This very unsatisfactory situation for Qmail can be relaxed employing my combined Qmail Authentication patch.
+Based upon a common coding, the Qmail Authentication provides the following features:
+
+qmail-smtpd: Announcement of AUTH with supported types PLAIN, LOGIN, and CRAM-MD5 requiring a checkpassword compatible PAM.
+qmail-remote: Sender-based authentication promoting types CRAM-MD5, PLAIN, and LOGIN; smtproutes compliant authsenders user database, allowing artificial SMTP relaying.
+Mail From: <return-path> AUTH=user parser/generator supporting "xtext" representation of username.
+The authenticated username is included in the "Received:" header.
+Additional support of the ESMTP "SIZE" announcement for qmail-smtpd.
+Combining authentication for qmail-smtpd and qmail-remote the user's authentication information can be preserved to some extend, if Qmail is acting as a relay.
+
+Patches & Programs
+
+qmail-authentication-0.7.1   - Generic SMTP authentication for qmail-smtpd and qmail-remote. Complies to RFC 3848 and RFC 4409 (MD5: d805800133707bd152d258caf2e8fdd3).
+* Provides now CRAM-MD5 authentication for qmail-remote as well.
+* Note: Don't bother about the diff-header in the patch files.
+
+qmail-smtpd-auth-0.5.10 Includes a generic 'MAIL FROM:' parameter parser supporting 'AUTH' and 'SIZE' advertisements; complies to RFC 3848 and RFC 4409 (MD5: 8df16e5724dbd1fa9d371c7fbd167e7d).
+* Allows 'complex' user names for CRAM-MD5.
+
+qmail-smtpd-auth-0.4.3 - Updated and bug-fixed version of Krysztof Dabrowski's SMTP-Auth patch (MD5:f2653126515ca3ae26ff7d016a70663b).
+
+cmd5checkpw-0.30 - Adopted version of Krysztof Dabrowski's cmd5checkpw; the user base resides in /var/qmail/users/authuser.
+
+vchkpw.c.diff - against Vpopmail's 5.3.27 vchkpw to comply with the checkpassword interface for C/R requests.
+
+Base64-1.3 - a Base 64 converter for Unix (taken from John Walker).
+
+SPAMCONTROL - allows additional logging of qmail-smtpd sessions and the relevant SMTP Auth parameters.
+
+Addendum
+
+Inter7 has incorporated the above patch for vchkpw into the current Vpopmail 5.4.x.
+
+Most of the current "big" qmail patches (e.g. Bill Shupp's 'Qmail Toaster') include my SMTP Authentication patch, but not netqmail.
+
+Setting up qmail for SMTP Authentication
+
+First, patch Qmail 1.03 (or netqmail-1.0.6) with one of the Auth patches as provided above.
+
+Second, you need a PAM to allow authentication against a certain database. For small environments, cmd5checkpw-0.30 would be a useful choice, however for larger sites one of the following PAMs are more useful.
+
+checkpassword:
+
+Without changing the actual user qmail-smtpd usually runs as, chmod'ing the checkpassword will grant access to the system user's passwords:
+
+# ls -al /bin/checkpassword
+-rwx------ 1 root wheel 7676 Sep 12 13:07 /bin/checkpassword
+chmod u+s /bin/checkpassword
+chmod go+x /bin/checkpassword
+# ls -al /bin/checkpassword
+-rws--x--x 1 root wheel 7676 Sep 12 13:07 /bin/checkpassword
+
+In order to reduce security risks, it might be necessary to enhance qmail-smtpd's effective group rights to wheel or root, and the other hand to restrict the execution rights for checkpassword to this group.
+
+checkvpw:
+
+Bruce Guenter's vmailmgr provides a checkvpw utility, which can be used as a PAM for SMTP Authentication.Here, the virtual domains are always under control of the corresponding user and the User database is de-centralized.
+
+In order to make checkvpw work with qmail-smtpd, the following steps have to be obeyed:
+
+checkvpw - which belongs to root - has to be made sticky:
+-rwsr-sr-x 1 root root 58408 Feb 8 2001 /usr/bin/checkvpw
+checkvpw requires an additional argument to cope with the missing Maildir environment, typically maildir.
+For successfull authentication, the domain information has to be appended to Userid and constructed as email address (userid@virtualdomain.com).
+checkvpw does not support CRAM-MD5 authentication.
+vchkpw:
+
+Inter7's Vopmail provides vckpw as PAM, which allows authentication against a central database. 
+Third, you have to setup qmail-smtpd to accept SMTP Authentication.
+
+Here is my qmail-smtpd run file, which allows SMTP Authentication for system users; though without CRAM-MD5 capabilities.
+
+#!/bin/sh
+QMAILDUID=`id -u qmaild`
+QMAILDGID=`id -g qmaild`
+HOSTNAME=`hostname`
+MAXCONCURRENCY=`cat /var/qmail/control/concurrencyincoming`
+exec softlimit -m 200000000 \
+   tcpserver -vR -l $HOSTNAME -c $MAXCONCURRENCY \
+   -u $QMAILDUID -g $QMAILDGID 0 smtp \
+   /var/qmail/bin/qmail-smtpd /bin/checkpassword true 2>&1
+
+Another examples shows how to setup up the run file with Bruce Guenter's checkvpw:
+
+#!/bin/sh
+QMAILDUID=`id -u qmaild`
+QMAILDGID=`id -g qmaild`
+HOSTNAME=`hostname`
+MAXCONCURRENCY=`cat /var/qmail/control/concurrencyincoming`
+exec softlimit -m 200000000 \
+   tcpserver -vR -l $HOSTNAME -c $MAXCONCURRENCY \
+   -u $QMAILDUID -g $QMAILDGID 0 smtp \
+   /var/qmail/bin/qmail-smtpd /usr/bin/checkvpw true maildir 2>&1
+
+Two drawbacks of the mentioned solutions exist:
+
+qmail-smtpd will always announce SMTP-AUTH, even if no qualified PAM is provided.
+The CRAM-MD5 algorithm is included in qmail-smtpd and it has to activated (conditionally complied) in particular.
+However, my SPAMCONTROL recognizes the environment variable SMTPAUTH, which can be used in the following way:
+SMTPAUTH="" -- promote and accept 'PLAIN' and 'LOGIN' SMTP Authentication.
+SMTPAUTH="cram" -- promote and accept additionally 'CRAM-MD5' SMTP Authentication.
+Testing
+
+As discussed, successful SMTP Authentication depends on the smooth interaction of three parties:
+
+The Mail User Agent (MUA) as SMTP Auth client and it's capabilities,
+the SMTP Auth server to announce a set of Auth mechanisms and to co-operate with
+the PAM, which reads the User Database and validates the User.
+Apart from customization mistakes, in case of problems it is necessary to determine the chosen Auth mechanism (as discussed before) and to trace the (E)SMTP session. Dan Bernstein's recordio (part of his UCSPI) can be used in conjunction with a modified run script for eg. qmail-smtpd:
+
+#!/bin/sh
+QMAILDUID=`id -u vpopmail`
+QMAILDGID=`id -g vpopmail`
+HOSTNAME=`hostname`
+MAXCONCURRENCY=`cat /var/qmail/control/concurrencyincoming`
+exec softlimit -m 200000000 \
+   tcpserver -vR -l $HOSTNAME -c $MAXCONCURRENCY \
+   -u $QMAILDUID -g $QMAILDGID 0 smtp \
+   /usr/local/bin/recordio sh -c '/var/qmail/bin/qmail-smtpd \
+   /home/vpopmail/bin/vchkpw true 2>&1'
+
+For testing purposes, this run script should be invoked in the foreground and the tracing apears on the TTY while a SMTP client is connecting to the server. The sample above can be used to trace SMTP Authentication against Vpopmail's vchkpw.
+
+En/Decoding BASE64:
+
+In order to decode the BASE64 strings, one can use the base64 converter. It's important to understand, that for a correct decoding the trailing "\0" has to be included. Lets assume the username is "test" and the password is "testpass". In order to verify the en/decoding one should proceed as follows:
+
+bash-2.05b$ printf "test" | base64 -e
+dGVzdA==
+bash-2.05b$ printf "testpass" | base64 -e
+dGVzdHBhc3M=
+bash-2.05b$ printf "\0test\0testpass" | base64 -e
+AHRlc3QAdGVzdHBhc3M=
+
+Thus, the user name "test" translates to "dGVzdA==" and the corresponding password "testpass" becomes "dGVzdHBhc3M=".
+For AUTH Plain, a leading "\0" (if not explicit Authorize-ID is provided) has to be included and the whole string encodes as "AAllc3QACWVzdHBhc3M=". The equal sign ("=") is an alignment padding character. During the SMTP Auth dialog, these strings can be supplied from the command line.
+
+Note: It is important to use printf from the bash, thus no CR/LF characters are added which will happen employing echo instead of printf.
+
+Working with CRAM-MD5 Challenges/Digests:
+
+While developing CRAM-MD5 support for qmail-remote I found Paul Makepeace's PERL script to generate a HMAC digest very helpful (he wrote that tool for Exim). You can download a little modified version of hmac_md5.pl from here and you need to install the PERL module DIGEST-HMAC-1.02 from CPAN.
