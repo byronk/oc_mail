@@ -169,6 +169,7 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 	cmcf = ctx->main_conf[oc_smtp_core_module.ctx_index];
 	cscfp = cmcf->servers.elts;
 
+	
 	for (m = 0; ngx_modules[m]; m++) {
 		if (ngx_modules[m]->type != OC_SMTP_MODULE) {
 			continue;
@@ -182,6 +183,7 @@ oc_smtp_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
 		cf->ctx = ctx;
 
+		
 		if (module->init_main_conf) {
 			rv = module->init_main_conf(cf, ctx->main_conf[mi]);
 			if (rv != NGX_CONF_OK) {

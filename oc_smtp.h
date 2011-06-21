@@ -118,10 +118,13 @@ typedef struct {
 
 	ngx_str_t               login;
     ngx_str_t               passwd;
+	ngx_uint_t				login_attempt;
 
 	ngx_str_t               out;
 	ngx_buf_t              *buffer;
 	ngx_uint_t              mail_state;
+	ngx_str_t               salt;
+	
 	ngx_array_t             args;
 	ngx_uint_t              command;
 	
@@ -140,6 +143,8 @@ typedef struct {
 	unsigned                quit:1;
 	unsigned                blocked:1;
 	unsigned                esmtp:1;
+	unsigned				authorised: 1;
+	unsigned                auth_method:3;
 }  oc_smtp_session_t;
 
 
