@@ -1323,6 +1323,7 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 	ngx_uint_t 				i;
 	oc_smtp_core_srv_conf_t  *cscf;
 	ngx_str_t	*args;
+	u_char      ch, *p, *c, c0, c1, c2, c3, c4;
 
 	cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
 
@@ -1353,7 +1354,29 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 
 	//处理from参数
 	args = s->args.elts;
+	if (args[0].len<sizeof("from:<>")) {
+		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"smtp mail from : invalid arguments\"%d\"");	
+		ngx_str_set(&s->out, smtp_invalid_argument);
+		return NGX_OK;
+
+	}
 	
+	c=args[0].data;
+	c0 = ngx_toupper(c[0]);
+	c1 = ngx_toupper(c[1]);
+	c2 = ngx_toupper(c[2]);
+	c3 = ngx_toupper(c[3]);
+	c4 = ngx_toupper(c[4]);
+	if (c0 != 'F' || c1 != 'R' || c2 != 'O' || c3 != 'M' || c4 != ':')
+	{
+		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"smtp mail from : invalid arguments\"%d\"");	
+		ngx_str_set(&s->out, smtp_invalid_argument);
+		return NGX_OK;
+
+	}
+
 
 	l.len = s->buffer->last - s->buffer->start;
 	l.data = s->buffer->start;
