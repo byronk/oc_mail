@@ -1319,11 +1319,16 @@ oc_smtp_cmd_auth(oc_smtp_session_t *s, ngx_connection_t *c)
 static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 {
 	u_char					   ch;
-	ngx_str_t					l;
-	ngx_uint_t 				i;
+	//ngx_str_t					l;
+	//ngx_uint_t 				i;
 	oc_smtp_core_srv_conf_t  *cscf;
 	ngx_str_t	*args;
-	u_char      ch, *p, *c, c0, c1, c2, c3, c4;
+	u_char      *p, *arg, *last, *arg_start, *arg_end, c0, c1, c2, c3, c4;
+	enum {
+		sw_start = 0,
+		sw_argument
+	} state;
+
 
 	cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
 
@@ -1362,53 +1367,63 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 
 	}
 	
-	c=args[0].data;
-	c0 = ngx_toupper(c[0]);
-	c1 = ngx_toupper(c[1]);
-	c2 = ngx_toupper(c[2]);
-	c3 = ngx_toupper(c[3]);
-	c4 = ngx_toupper(c[4]);
+	arg=args[0].data;
+	c0 = ngx_toupper(arg[0]);
+	c1 = ngx_toupper(arg[1]);
+	c2 = ngx_toupper(arg[2]);
+	c3 = ngx_toupper(arg[3]);
+	c4 = ngx_toupper(arg[4]);
 	if (c0 != 'F' || c1 != 'R' || c2 != 'O' || c3 != 'M' || c4 != ':')
 	{
 		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp mail from : invalid arguments\"%d\"");	
+				"smtp mail from : invalid arguments");	
 		ngx_str_set(&s->out, smtp_invalid_argument);
 		return NGX_OK;
 
 	}
 
-
-	l.len = s->buffer->last - s->buffer->start;
-	l.data = s->buffer->start;
-
-	for (i = 0; i < l.len; i++) {
-		ch = l.data[i];
-
-		if (ch != CR && ch != LF) {
-			continue;
+	
+	last = arg+args[0].len;
+	state = sw_start;
+	for (p = &arg[5]; p< last; p++) {
+		ch = *p;
+		switch (state) {
+			case sw_start:
+				if (ch != '<') {
+					continue;
+				}
+				arg_start = p;
+				arg_start ++;
+				state = sw_argument;
+				break;
+			case sw_argument:
+				if (ch != '>') {
+					continue;
+				}
+				arg_end = p;
+				goto parse_done;
+				break;
 		}
 
-		l.data[i] = ' ';
 	}
 
-	while (i) {
-		if (l.data[i - 1] != ' ') {
-			break;
-		}
+parse_error:
+	ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
+			"smtp mail from : can not parse the return path");	
+	ngx_str_set(&s->out, smtp_invalid_argument);
+	return NGX_OK;	
+	
 
-		i--;
-	}
+parse_done:
 
-	l.len = i;
+	s->smtp_from.len = arg_end - arg_start;
 
-	s->smtp_from.len = l.len;
-
-	s->smtp_from.data = ngx_pnalloc(c->pool, l.len);
+	s->smtp_from.data = ngx_pnalloc(c->pool, s->smtp_from.len);
 	if (s->smtp_from.data == NULL) {
 		return NGX_ERROR;
 	}
 
-	ngx_memcpy(s->smtp_from.data, l.data, l.len);
+	ngx_memcpy(s->smtp_from.data, arg_start, arg_end - arg_start);
 
 	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
 				"smtp mail from:\"%V\"", &s->smtp_from);
@@ -1428,6 +1443,13 @@ static ngx_int_t oc_smtp_cmd_starttls(oc_smtp_session_t *s,
 static ngx_int_t 
 oc_smtp_cmd_rset(oc_smtp_session_t *s, ngx_connection_t *c)
 {
+	//transaction×´Ì¬¸´Î»
+    ngx_str_null(&s->smtp_from);
+	s->smtp_rcpts.nelts = 0;
+	
+    ngx_str_set(&s->out, smtp_ok);
+
+
 	return NGX_OK;
 }
 
