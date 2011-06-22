@@ -1,0 +1,74 @@
+
+                       CRAM-MD5 Authentication Test Tool
+
+   [1]oliver@net-track.ch
+
+Building the Tool
+
+   The cmd5 tool can be created using a simple "make":
+    make
+
+
+Usage
+
+   The cmd5 tool calculates the CRAM-MD5 digest for SMTP-AUTH. It is
+   invoked as follows:
+    ./cmd5 <username> <password> <challenge>
+
+
+   The challenge is Base64 encoded, as returned by the server.
+
+Sample Session
+
+   A sample session with an smtp server looks as follows: (lines marked
+   with "*" are entered by the client)
+      220 caraz.net-track.ch ESMTP
+    * EHLO client
+      250-caraz.net-track.ch
+      250-AUTH LOGIN CRAM-MD5 PLAIN
+      250-AUTH=LOGIN CRAM-MD5 PLAIN
+      250-PIPELINING
+      250 8BITMIME
+    * AUTH CRAM-MD5
+
+
+   Here, the server will output the Base64-encoded challenge:
+      334 PDMyLjEzMjM0MTIzQG1haWxob3N0Pg==
+
+
+   This challenge can now be used by cmd5 as follows:
+    ./cmd5 foo@baar PaZZword PDMyLjEzMjM0MTIzQG1haWxob3N0Pg==
+    :
+    :
+    base64 encoded: Zm9vQGJhYXIgM2I4YTc4ODZkNGYxNzFhNDIxMWZlODU5NDQ0MWZjZmI=
+
+
+   This result can now be entered into the SMTP server conversation:
+    * Zm9vQGJhYXIgM2I4YTc4ODZkNGYxNzFhNDIxMWZlODU5NDQ0MWZjZmI=
+
+
+   If the username and password is correct, the user is now
+   authenticated.
+
+Credits
+
+   md5c.c is Copyright (C) 1991-1992 by RSA Data Security, Inc.
+
+   hmac_md5.c is taken from RFC2104.
+
+   All other code is Copyright (C) 2003 by [2]Oliver Hitz.
+
+Disclaimer
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+   ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+   OTHER DEALINGS IN THE SOFTWARE.
+
+References
+
+   1. mailto:oliver@net-track.ch
+   2. mailto:oliver@net-track.ch

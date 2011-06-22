@@ -1,0 +1,115 @@
+<html>
+  <head>
+    <title>CRAM-MD5 Authentication Test Tool</title>
+    <style type="text/css">
+      body { background-color: #ffffff; }
+    </style>
+  </head>
+  <body>
+    <h1>CRAM-MD5 Authentication Test Tool</h1>
+
+    <p><a href="mailto:oliver@net-track.ch">oliver@net-track.ch</a></p>
+
+    <h2>Building the Tool</h2>
+
+    <p>
+      The cmd5 tool can be created using a simple "make":
+    </p>
+
+    <pre>
+    make
+    </pre>
+
+    <h2>Usage</h2>
+
+    <p>
+      The cmd5 tool calculates the CRAM-MD5 digest for SMTP-AUTH.
+      It is invoked as follows:
+    </p>
+
+    <pre>
+    ./cmd5 &lt;username&gt; &lt;password&gt; &lt;challenge&gt;
+    </pre>
+
+    <p>
+      The <tt>challenge</tt> is Base64 encoded, as returned by the
+      server.
+    </p>
+
+    <h2>Sample Session</h2>
+
+    <p>
+      A sample session with an smtp server looks as follows: (lines
+      marked with "*" are entered by the client)
+    </p>
+
+    <pre>
+      220 caraz.net-track.ch ESMTP
+    * EHLO client
+      250-caraz.net-track.ch
+      250-AUTH LOGIN CRAM-MD5 PLAIN
+      250-AUTH=LOGIN CRAM-MD5 PLAIN
+      250-PIPELINING
+      250 8BITMIME
+    * AUTH CRAM-MD5
+    </pre>
+
+    <p>
+      Here, the server will output the Base64-encoded challenge:
+    </p>
+  
+    <pre>
+      334 PDMyLjEzMjM0MTIzQG1haWxob3N0Pg==
+    </pre>
+
+    <p>
+      This challenge can now be used by cmd5 as follows:
+    </p>
+
+    <pre>
+    ./cmd5 foo@baar PaZZword PDMyLjEzMjM0MTIzQG1haWxob3N0Pg==
+    :
+    :
+    base64 encoded: Zm9vQGJhYXIgM2I4YTc4ODZkNGYxNzFhNDIxMWZlODU5NDQ0MWZjZmI=
+    </pre>
+
+    <p>
+      This result can now be entered into the SMTP server conversation:
+    </p>
+
+    <pre>
+    * Zm9vQGJhYXIgM2I4YTc4ODZkNGYxNzFhNDIxMWZlODU5NDQ0MWZjZmI=
+    </pre>
+
+    <p>
+      If the username and password is correct, the user is now authenticated.
+    </p>
+
+    <h2>Credits</h2>
+
+    <p>
+      md5c.c is Copyright (C) 1991-1992 by RSA Data Security, Inc.
+    </p>
+
+    <p>
+      hmac_md5.c is taken from RFC2104.
+    </p>
+
+    <p>
+      All other code is Copyright (C) 2003 by
+      <a href="mailto:oliver@net-track.ch">Oliver Hitz</a>.
+    </p>
+
+    <h2>Disclaimer</h2>
+
+    <p>
+      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+      OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+      MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+      NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+      LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+      FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+      DEALINGS IN THE SOFTWARE.
+    </p>
+  </body>
+</html>

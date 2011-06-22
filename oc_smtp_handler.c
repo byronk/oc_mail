@@ -756,6 +756,7 @@ oc_smtp_salt(oc_smtp_session_t *s, ngx_connection_t *c,
 		return NGX_ERROR;
 	}
 
+	//根据CRAM-MD5的算法，生成随机的验证串
 	s->salt.len = ngx_sprintf(s->salt.data, "<%ul.%T@%V>" CRLF,
 				ngx_random(), ngx_time(), &cscf->server_name)
 		- s->salt.data;
