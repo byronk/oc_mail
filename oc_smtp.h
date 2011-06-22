@@ -99,6 +99,7 @@ typedef struct {
 	ngx_str_t               helo_server_name;
 	ngx_str_t               greeting;
 	size_t                  client_buffer_size;
+	ngx_uint_t				auth_required; //是否需要验证
 	ngx_uint_t              auth_methods;  //存放支持的auth method，位图方式
 	ngx_array_t             capabilities;  
 	ngx_str_t               capability;    //存放capabilities对应的字符串

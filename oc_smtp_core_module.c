@@ -75,6 +75,13 @@ static ngx_command_t  oc_smtp_core_commands[] = {
 		offsetof(oc_smtp_core_srv_conf_t, client_buffer_size),
 		NULL },
 
+	{ ngx_string("auth_required"),
+		OC_SMTP_MAIN_CONF|OC_SMTP_SRV_CONF|NGX_CONF_TAKE1,
+		ngx_conf_set_num_slot,
+		OC_SMTP_SRV_CONF_OFFSET,
+		offsetof(oc_smtp_core_srv_conf_t, auth_required),
+		NULL },
+
 	{ ngx_string("smtp_auth"),
 		OC_SMTP_MAIN_CONF|OC_SMTP_SRV_CONF|NGX_CONF_1MORE,
 		ngx_conf_set_bitmask_slot,
@@ -150,6 +157,7 @@ oc_smtp_core_create_srv_conf(ngx_conf_t *cf)
 	cscf->resolver_timeout = NGX_CONF_UNSET_MSEC;
 	cscf->so_keepalive = NGX_CONF_UNSET;
 	cscf->client_buffer_size = NGX_CONF_UNSET_SIZE;
+	cscf->auth_required = NGX_CONF_UNSET_UINT;
 
 	if (ngx_array_init(&cscf->capabilities, cf->pool, 4, sizeof(ngx_str_t))
         != NGX_OK)
@@ -183,6 +191,9 @@ oc_smtp_core_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 				(size_t) ngx_pagesize);
 
 	ngx_conf_merge_value(conf->so_keepalive, prev->so_keepalive, 0);
+
+	//暂时默认定为不需要验证
+	ngx_conf_merge_uint_value(conf->auth_required, prev->auth_required, 0);
 
     ngx_conf_merge_bitmask_value(conf->auth_methods,
                           prev->auth_methods,

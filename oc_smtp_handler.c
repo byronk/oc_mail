@@ -533,6 +533,10 @@ oc_smtp_parse_command(oc_smtp_session_t *s)
 						{
 							s->command = OC_SMTP_RCPT;
 
+						} else if (c0 == 'D' && c1 == 'A' && c2 == 'T' && c3 == 'A')
+						{
+							s->command = OC_SMTP_DATA;
+							
 						} else if (c0 == 'V' && c1 == 'R' && c2 == 'F' && c3 == 'Y')
 						{
 							s->command = OC_SMTP_VRFY;
@@ -756,7 +760,7 @@ oc_smtp_salt(oc_smtp_session_t *s, ngx_connection_t *c,
 		return NGX_ERROR;
 	}
 
-	//根据CRAM-MD5的算法，生成随机的验证串
+	//根据CRAM-MD5的协议规定，生成随机的验证串
 	s->salt.len = ngx_sprintf(s->salt.data, "<%ul.%T@%V>" CRLF,
 				ngx_random(), ngx_time(), &cscf->server_name)
 		- s->salt.data;
@@ -1318,14 +1322,16 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 	ngx_str_t					l;
 	ngx_uint_t 				i;
 	oc_smtp_core_srv_conf_t  *cscf;
+	ngx_str_t	*args;
 
 	cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
 
-	if (!(s->authorised)) {
+	if (cscf->auth_required && !(s->authorised)) {
 		oc_smtp_smtp_log_rejected_command(s, c, "client was rejected: \"%V\"");
 		ngx_str_set(&s->out, smtp_auth_required);
 		return NGX_OK;
 	}
+
 
 	/* auth none */
 
@@ -1333,6 +1339,21 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 		ngx_str_set(&s->out, smtp_bad_sequence);
 		return NGX_OK;
 	}
+
+	
+	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"smtp MAIL command argument count :\"%d\"", s->args.nelts);	
+
+	if (s->args.nelts < 1) {
+		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"smtp mail from : not enough arguments\"%d\"");	
+		ngx_str_set(&s->out, smtp_invalid_argument);
+		return NGX_OK;
+	}
+
+	//处理from参数
+	args = s->args.elts;
+	
 
 	l.len = s->buffer->last - s->buffer->start;
 	l.data = s->buffer->start;
