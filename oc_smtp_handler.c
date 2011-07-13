@@ -1212,11 +1212,18 @@ void
 oc_smtp_data_state(ngx_event_t *rev)
 {
 	//处理data命令期间的操作
-	ngx_int_t            rc;
 	ngx_connection_t    *c;
 	oc_smtp_session_t  *s;
 	oc_smtp_core_srv_conf_t  *cscf;
 	ssize_t                    n;
+	u_char      ch, *p;
+	ngx_str_t	line;
+	
+	enum {
+		sw_start = 0,
+		sw_almost_done,
+		sw_done
+	} state;
 
 
 	c = rev->data;
@@ -1240,7 +1247,95 @@ oc_smtp_data_state(ngx_event_t *rev)
 	s->blocked = 0;
 
 	//一直按行读取，直到读到一个<CRLF>"."<CRLF>"
+	
+	n = c->recv(c, s->buffer->last, s->buffer->end - s->buffer->last);
 
+	if (n == NGX_ERROR || n == 0) {
+		oc_smtp_close_connection(c);
+	}
+
+	if (n > 0) {
+		s->buffer->last += n;
+	}
+
+	if (n == NGX_AGAIN) {
+		if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
+			oc_smtp_session_internal_server_error(s);
+			return ;
+		}
+
+		return ;
+	}
+
+
+	state = s->state;
+
+	for (p = s->buffer->pos; p < s->buffer->last; p++) {
+		ch = *p;
+		ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0, "ch: %d", ch);
+
+		switch (state) {
+			case sw_start:
+				if (ch == CR || ch == LF) {
+					//继续处理buffer中的CR LF
+					switch (ch) {
+						case CR:
+							state = sw_almost_done;
+							break;
+						case LF:
+							state = sw_done;
+							break;;
+					}
+				} else {
+					//todo: 单个字节的复制比较低效
+					*(s->line_buffer->pos) = ch;
+					s->line_buffer->pos ++;
+				}
+				break;
+			case sw_almost_done:
+				state = sw_done;
+				break;
+		}
+
+		if (state == sw_done) {
+			ch = *(s->line_buffer->start);
+			if ((ch=='.') && (s->line_buffer->pos - s->line_buffer->start == 1)) {
+				//检测到结束符
+				s->mail_state = oc_smtp_start;
+				c->read->handler = oc_smtp_auth_state;
+
+				s->buffer->pos = s->buffer->start;
+				s->buffer->last = s->buffer->start; 
+
+				oc_smtp_reset_session_status(s);
+
+				ngx_str_set(&s->out, smtp_ok);
+				oc_smtp_send(c->write);
+				return;
+
+			}
+
+			//暂时的处理: 丢弃行
+			line.data = s->line_buffer->start;
+			line.len = s->line_buffer->pos - s->line_buffer->start;
+			ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"DATA:\"%V\"", &line);
+			
+			s->line_buffer->pos = s->line_buffer->start;
+			s->line_buffer->last = s->line_buffer->start;			
+
+			state = sw_start;
+			
+		}
+
+	}
+	
+	//已处理完所有的buffer，将pos复位
+	s->buffer->pos = s->buffer->start;
+	s->buffer->last = s->buffer->start; 
+	s->state = state;
+
+	
 	
 }
 
@@ -1673,6 +1768,12 @@ oc_smtp_cmd_data(oc_smtp_session_t *s, ngx_connection_t *c)
 	
 	
 	//进入到data命令处理方式
+	s->buffer->pos = s->buffer->start;
+	s->buffer->last = s->buffer->start;
+
+	s->line_buffer->pos = s->line_buffer->start;
+	s->line_buffer->last = s->line_buffer->start;
+	
 	s->mail_state = oc_smtp_data;
 	c->read->handler = oc_smtp_data_state;
 	ngx_str_set(&s->out, smtp_data);
