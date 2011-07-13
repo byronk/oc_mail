@@ -24,10 +24,9 @@ oc_mail_addr_validate(ngx_str_t *addr)
 	邮件地址总长度不超过254
 	*/
 	ngx_uint_t                  i;
-	u_char						ch;
 	ngx_uint_t                  last_dot = 0;
 
-	u_char *char_spec= "!#$%&'*+-/=?^_`{|}~";
+	u_char char_spec[]= "!#$%&'*+-/=?^_`{|}~";
 	u_char ca[] = {0,0};  //声明一个数组用于strnstr()函数
 
 	if (addr->len > OC_MAIL_ADDR_LEN_MAX) 
@@ -61,7 +60,7 @@ oc_mail_addr_validate(ngx_str_t *addr)
 		if ((ca[0]>='A' && ca[0]<='Z') ||
 			(ca[0]>='a' && ca[0]<='z') ||
 			(ca[0]>='0' && ca[0]<='9') ||
-			ngx_strnstr(char_spec, ca, sizeof("!#$%&'*+-/=?^_`{|}~")))
+			ngx_strnstr(char_spec, (char *)ca, sizeof("!#$%&'*+-//=?^_`{|}~")))
 		{
 			continue;
 		} else {
