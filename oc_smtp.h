@@ -1,5 +1,5 @@
-#ifndef _OC_MAIL_H_INCLUDED_
-#define _OC_MAIL_H_INCLUDED_
+#ifndef _OC_SMTP_H_INCLUDED_
+#define _OC_SMTP_H_INCLUDED_
 
 #include <ngx_config.h>
 #include <ngx_core.h>
