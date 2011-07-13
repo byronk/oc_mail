@@ -17,6 +17,7 @@ static ngx_int_t oc_smtp_cmd_starttls(oc_smtp_session_t *s,
 			ngx_connection_t *c);
 static ngx_int_t oc_smtp_cmd_rset(oc_smtp_session_t *s, ngx_connection_t *c);
 static ngx_int_t oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c);
+static ngx_int_t oc_smtp_cmd_data(oc_smtp_session_t *s, ngx_connection_t *c);
 static void oc_smtp_smtp_log_rejected_command(oc_smtp_session_t *s, ngx_connection_t *c,
 			char *err);
 
@@ -30,6 +31,7 @@ static u_char  smtp_ok[] = "250 2.0.0 OK" CRLF;
 static u_char  smtp_bye[] = "221 2.0.0 Bye" CRLF;
 static u_char  smtp_starttls[] = "220 2.0.0 Start TLS" CRLF;
 static u_char  smtp_next[] = "334 " CRLF;
+static u_char  smtp_data[] = "354 Start mail input; end with <CRLF>.<CRLF>" CRLF;
 static u_char  smtp_username[] = "334 VXNlcm5hbWU6" CRLF;
 static u_char  smtp_password[] = "334 UGFzc3dvcmQ6" CRLF;
 static u_char  smtp_invalid_command[] = "500 5.5.1 Invalid command" CRLF;
@@ -38,6 +40,7 @@ static u_char  smtp_invalid_command[] = "500 5.5.1 Invalid command" CRLF;
 static u_char  smtp_invalid_argument[] = "501 5.5.4 Invalid argument" CRLF;
 static u_char  smtp_auth_required[] = "530 5.7.1 Authentication required" CRLF;
 static u_char  smtp_bad_sequence[] = "503 5.5.1 Bad sequence of commands" CRLF;
+static u_char  smtp_no_recipients[] = "554 No valid recipients" CRLF;
 
 
 
@@ -261,12 +264,19 @@ oc_smtp_init_session(ngx_connection_t *c)
 	c->write->handler = oc_smtp_send;
 
 	s->host = smtp_unavailable;
+	
 	oc_smtp_greeting(s, c);
 
 	return;
 
 }
 
+void oc_smtp_reset_session_status(oc_smtp_session_t *s) 
+{
+	ngx_str_null(&s->smtp_from);
+	s->null_return_path = 0;
+	s->smtp_rcpts.nelts = 0;
+}
 
 u_char *
 oc_smtp_log_error(ngx_log_t *log, u_char *buf, size_t len)
@@ -464,6 +474,15 @@ oc_smtp_create_buffer(oc_smtp_session_t *s, ngx_connection_t *c)
 		oc_smtp_session_internal_server_error(s);
 		return NGX_ERROR;
 	}
+
+	s->line_buffer = ngx_create_temp_buf(c->pool, cscf->client_buffer_size);
+	if (s->line_buffer == NULL) {
+		oc_smtp_session_internal_server_error(s);
+		return NGX_ERROR;
+	}
+
+	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"client_buffer_size: %d", cscf->client_buffer_size);
 
 	return NGX_OK;
 }
@@ -1112,6 +1131,10 @@ oc_smtp_auth_state(ngx_event_t *rev)
 					case OC_SMTP_RCPT:
 						rc = oc_smtp_cmd_rcpt(s, c);
 						break;
+						
+					case OC_SMTP_DATA:
+						rc = oc_smtp_cmd_data(s, c);
+						break;
 
 					case OC_SMTP_RSET:
 						rc = oc_smtp_cmd_rset(s, c);
@@ -1183,6 +1206,42 @@ oc_smtp_auth_state(ngx_event_t *rev)
 
 			oc_smtp_send(c->write);
 	}
+}
+
+void
+oc_smtp_data_state(ngx_event_t *rev)
+{
+	//处理data命令期间的操作
+	ngx_int_t            rc;
+	ngx_connection_t    *c;
+	oc_smtp_session_t  *s;
+	oc_smtp_core_srv_conf_t  *cscf;
+	ssize_t                    n;
+
+
+	c = rev->data;
+	s = c->data;
+	cscf = oc_smtp_get_module_srv_conf(s, oc_smtp_core_module);
+	ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0, "smtp data state");
+
+	if (rev->timedout) {
+		ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
+		c->timedout = 1;
+		oc_smtp_close_connection(c);
+		return;
+	}
+
+	if (s->out.len) {
+		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0, "smtp send handler busy");
+		s->blocked = 1;
+		return;
+	}
+
+	s->blocked = 0;
+
+	//一直按行读取，直到读到一个<CRLF>"."<CRLF>"
+
+	
 }
 
 static ngx_int_t
@@ -1348,20 +1407,20 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 
 	
 	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp MAIL command argument count :\"%d\"", s->args.nelts);	
+				"smtp MAIL command argument count : %d", s->args.nelts);	
 
 	if (s->args.nelts < 1) {
 		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp mail from : not enough arguments\"%d\"");	
+				"smtp MAIL FROM : not enough arguments\"%d\"");	
 		ngx_str_set(&s->out, smtp_invalid_argument);
 		return NGX_OK;
 	}
 
 	//处理from参数
 	args = s->args.elts;
-	if (args[0].len<sizeof("from:<>")) {
-		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp mail from : invalid arguments\"%d\"");	
+	if (args[0].len<sizeof("from:<>")-1) {
+		ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"smtp MAIL FROM : invalid arguments. Argument length is %d, less than 7.", args[0].len);	
 		ngx_str_set(&s->out, smtp_invalid_argument);
 		return NGX_OK;
 
@@ -1376,7 +1435,7 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 	if (c0 != 'F' || c1 != 'R' || c2 != 'O' || c3 != 'M' || c4 != ':')
 	{
 		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp mail from : invalid arguments");	
+				"smtp MAIL FROM : invalid arguments");	
 		ngx_str_set(&s->out, smtp_invalid_argument);
 		return NGX_OK;
 
@@ -1418,15 +1477,21 @@ parse_done:
 
 	s->smtp_from.len = arg_end - arg_start;
 
-	s->smtp_from.data = ngx_pnalloc(c->pool, s->smtp_from.len);
-	if (s->smtp_from.data == NULL) {
-		return NGX_ERROR;
+	if (s->smtp_from.len) {
+
+		s->smtp_from.data = ngx_pnalloc(c->pool, s->smtp_from.len);
+		if (s->smtp_from.data == NULL) {
+			return NGX_ERROR;
+		}
+
+		ngx_memcpy(s->smtp_from.data, arg_start, arg_end - arg_start);
+
+		ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+					"smtp mail from:\"%V\"", &s->smtp_from);
+	} else {
+		//null return path
+		s->null_return_path = 1;
 	}
-
-	ngx_memcpy(s->smtp_from.data, arg_start, arg_end - arg_start);
-
-	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp mail from:\"%V\"", &s->smtp_from);
 
 	ngx_str_set(&s->out, smtp_ok);
 
@@ -1443,11 +1508,31 @@ static ngx_int_t oc_smtp_cmd_starttls(oc_smtp_session_t *s,
 static ngx_int_t 
 oc_smtp_cmd_rset(oc_smtp_session_t *s, ngx_connection_t *c)
 {
+	ngx_str_t *rcpts;
+	ngx_uint_t 	i;
+	
+	//输出一些debug信息
+	ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"RSET executed");
+	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"mail from:\"%V\"", &s->smtp_from);
+
+	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"rcpt count:%d", s->smtp_rcpts.nelts);
+
+	rcpts = s->smtp_rcpts.elts;
+	for (i=0; i<s->smtp_rcpts.nelts; i++) {
+		ngx_log_debug2(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"rcpt[%d]:\"%v\"", i, &rcpts[i]);
+	}
+	
+	
 	//transaction状态复位
-    ngx_str_null(&s->smtp_from);
-	s->smtp_rcpts.nelts = 0;
+	oc_smtp_reset_session_status(s);
 	
     ngx_str_set(&s->out, smtp_ok);
+
+	
 
 
 	return NGX_OK;
@@ -1478,7 +1563,7 @@ oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c)
 
 	/* auth none */
 
-	if (s->smtp_from.len == 0) {
+	if (s->smtp_from.len == 0 && !s->null_return_path) {
 		ngx_str_set(&s->out, smtp_bad_sequence);
 		return NGX_OK;
 	}
@@ -1503,7 +1588,6 @@ oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c)
 				"smtp rcpt to : invalid arguments\"%d\"");	
 		ngx_str_set(&s->out, smtp_invalid_argument);
 		return NGX_OK;
-
 	}
 	
 	arg=args[0].data;
@@ -1574,6 +1658,25 @@ parse_done:
 
 
 
+	return NGX_OK;
+}
+
+static ngx_int_t 
+oc_smtp_cmd_data(oc_smtp_session_t *s, ngx_connection_t *c)
+{
+	if (s->smtp_rcpts.nelts == 0) {
+		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"smtp received DATA command, but no recipients.");
+		ngx_str_set(&s->out, smtp_no_recipients);
+		return NGX_OK;
+	}
+	
+	
+	//进入到data命令处理方式
+	s->mail_state = oc_smtp_data;
+	c->read->handler = oc_smtp_data_state;
+	ngx_str_set(&s->out, smtp_data);
+	
 	return NGX_OK;
 }
 

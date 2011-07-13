@@ -123,6 +123,7 @@ typedef struct {
 
 	ngx_str_t               out;
 	ngx_buf_t              *buffer;
+	ngx_buf_t              *line_buffer;
 	ngx_uint_t              mail_state;
 	ngx_str_t               salt;
 	
@@ -146,6 +147,8 @@ typedef struct {
 	unsigned                esmtp:1;
 	unsigned				authorised: 1;
 	unsigned                auth_method:3;
+	unsigned				null_return_path: 1;  //可以支持空回复地址
+	
 }  oc_smtp_session_t;
 
 
@@ -176,7 +179,8 @@ typedef enum {
     oc_smtp_xclient_from,
     oc_smtp_xclient_helo,
     oc_smtp_from,
-    oc_smtp_to
+    oc_smtp_to,
+    oc_smtp_data
 } oc_smtp_state_e;
 
 
