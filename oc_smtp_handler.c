@@ -1273,7 +1273,7 @@ oc_smtp_data_state(ngx_event_t *rev)
 
 	for (p = s->buffer->pos; p < s->buffer->last; p++) {
 		ch = *p;
-		ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0, "ch: %d", ch);
+		//ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0, "ch: %d", ch);
 
 		switch (state) {
 			case sw_start:
@@ -1295,6 +1295,8 @@ oc_smtp_data_state(ngx_event_t *rev)
 				break;
 			case sw_almost_done:
 				state = sw_done;
+				break;
+			case sw_done:
 				break;
 		}
 
@@ -1473,15 +1475,14 @@ oc_smtp_cmd_auth(oc_smtp_session_t *s, ngx_connection_t *c)
 
 static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 {
-	u_char					   ch;
-	//ngx_str_t					l;
-	ngx_uint_t 					rc;
-	oc_smtp_core_srv_conf_t  *cscf;
-	ngx_str_t	*args;
-	u_char      *p, *arg, *last, *arg_start, *arg_end, c0, c1, c2, c3, c4;
+	u_char					   	ch;
+	oc_smtp_core_srv_conf_t  	*cscf;
+	u_char      				*p, *arg_start, *arg_end;
+	
 	enum {
 		sw_start = 0,
-		sw_argument
+		sw_addr,
+		sw_done
 	} state;
 
 
@@ -1501,46 +1502,8 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 		return NGX_OK;
 	}
 
-	
-	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp MAIL command argument count : %d", s->args.nelts);	
-
-	if (s->args.nelts < 1) {
-		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp MAIL FROM : not enough arguments\"%d\"");	
-		ngx_str_set(&s->out, smtp_invalid_argument);
-		return NGX_OK;
-	}
-
-	//处理from参数
-	args = s->args.elts;
-	if (args[0].len<sizeof("from:<>")-1) {
-		ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp MAIL FROM : invalid arguments. Argument length is %d, less than 7.", args[0].len);	
-		ngx_str_set(&s->out, smtp_invalid_argument);
-		return NGX_OK;
-
-	}
-	
-	arg=args[0].data;
-	c0 = ngx_toupper(arg[0]);
-	c1 = ngx_toupper(arg[1]);
-	c2 = ngx_toupper(arg[2]);
-	c3 = ngx_toupper(arg[3]);
-	c4 = ngx_toupper(arg[4]);
-	if (c0 != 'F' || c1 != 'R' || c2 != 'O' || c3 != 'M' || c4 != ':')
-	{
-		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp MAIL FROM : invalid arguments");	
-		ngx_str_set(&s->out, smtp_invalid_argument);
-		return NGX_OK;
-
-	}
-
-	
-	last = arg+args[0].len;
 	state = sw_start;
-	for (p = &arg[5]; p< last; p++) {
+	for (p = s->buffer->start; p <= s->buffer->pos; p++){
 		ch = *p;
 		switch (state) {
 			case sw_start:
@@ -1549,20 +1512,23 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 				}
 				arg_start = p;
 				arg_start ++;
-				state = sw_argument;
+				state = sw_addr;
 				break;
-			case sw_argument:
+			case sw_addr:
 				if (ch != '>') {
 					continue;
 				}
 				arg_end = p;
 				goto parse_done;
+				break;	
+			case sw_done:
 				break;
-		}
 
+		}
 	}
 
-parse_error:
+
+	//如果执行到这里表示解析return path失败
 	ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
 			"smtp mail from : can not parse the return path");	
 	ngx_str_set(&s->out, smtp_invalid_argument);
@@ -1575,13 +1541,7 @@ parse_done:
 
 	if (s->smtp_from.len) {
 
-		s->smtp_from.data = ngx_pnalloc(c->pool, s->smtp_from.len);
-		if (s->smtp_from.data == NULL) {
-			return NGX_ERROR;
-		}
-
-		ngx_memcpy(s->smtp_from.data, arg_start, arg_end - arg_start);
-
+		s->smtp_from.data = arg_start;
 		if (oc_mail_addr_validate(&s->smtp_from) != OC_MAIL_ADDR_OK) {
 			ngx_str_set(&s->out, smtp_invalid_argument);
 			ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
@@ -1592,6 +1552,15 @@ parse_done:
 			return NGX_OK;
 
 		}
+		
+
+		//分配空间保存地址
+		s->smtp_from.data = ngx_pnalloc(c->pool, s->smtp_from.len);
+		if (s->smtp_from.data == NULL) {
+			return NGX_ERROR;
+		}
+
+		ngx_memcpy(s->smtp_from.data, arg_start, arg_end - arg_start);
 
 		ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
 					"smtp mail from:\"%V\"", &s->smtp_from);
@@ -1650,12 +1619,13 @@ oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c)
 {
 	u_char					   	ch;
 	oc_smtp_core_srv_conf_t  	*cscf;
-	ngx_str_t					*args;
-	u_char						*p, *arg, *last, *arg_start, *arg_end, c0, c1, c2;
+	u_char						*p, *arg_start, *arg_end;
 	enum {
 		sw_start = 0,
-		sw_argument
+		sw_addr,
+		sw_done
 	} state;
+
 	ngx_str_t					*rcpt;
 
 
@@ -1675,45 +1645,8 @@ oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c)
 		return NGX_OK;
 	}
 
-	
-	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp RCPT command argument count :\"%d\"", s->args.nelts); 
-
-	if (s->args.nelts < 1) {
-		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp rcpt to : not enough arguments"); 
-		ngx_str_set(&s->out, smtp_invalid_argument);
-		return NGX_OK;
-	}
-
-	//处理rcpt参数
-	args = s->args.elts;
-	ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp RCPT arguments[0]:\"%V\"", &args[0]); 
-	if (args[0].len<sizeof("to:<>")) {
-		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp rcpt to : invalid arguments\"%d\"");	
-		ngx_str_set(&s->out, smtp_invalid_argument);
-		return NGX_OK;
-	}
-	
-	arg=args[0].data;
-	c0 = ngx_toupper(arg[0]);
-	c1 = ngx_toupper(arg[1]);
-	c2 = ngx_toupper(arg[2]);
-	if (c0 != 'T' || c1 != 'O' || c2 != ':')
-	{
-		ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
-				"smtp mail from : invalid arguments");	
-		ngx_str_set(&s->out, smtp_invalid_argument);
-		return NGX_OK;
-
-	}
-
-	
-	last = arg+args[0].len;
 	state = sw_start;
-	for (p = &arg[3]; p< last; p++) {
+	for (p = s->buffer->start; p <= s->buffer->pos; p++){
 		ch = *p;
 		switch (state) {
 			case sw_start:
@@ -1722,19 +1655,22 @@ oc_smtp_cmd_rcpt(oc_smtp_session_t *s, ngx_connection_t *c)
 				}
 				arg_start = p;
 				arg_start ++;
-				state = sw_argument;
+				state = sw_addr;
 				break;
-			case sw_argument:
+			case sw_addr:
 				if (ch != '>') {
 					continue;
 				}
 				arg_end = p;
 				goto parse_done;
+				break;	
+			case sw_done:
 				break;
-		}
 
+		}
 	}
 
+	
 	//执行到这里表示未解析出完整的forward path
 	ngx_log_debug0(NGX_LOG_DEBUG_MAIL, c->log, 0,
 			"smtp rcpt to : invalid forward path");	
@@ -1753,15 +1689,15 @@ parse_done:
 	rcpt->data = arg_start;
 
 	if (oc_mail_addr_validate(rcpt) != OC_MAIL_ADDR_OK) {
-			ngx_str_set(&s->out, smtp_invalid_argument);
-			ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
-					"smtp rcpt to: invalid mail address \"%V\"", &s->smtp_from);
-			
-			ngx_str_null(&s->smtp_from);
+		ngx_str_set(&s->out, smtp_invalid_argument);
+		ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+				"smtp rcpt to: invalid mail address \"%V\"", &s->smtp_from);
+		
+		ngx_str_null(&s->smtp_from);
 
-			return NGX_OK;
+		return NGX_OK;
 
-		}	
+	}	
 
 	rcpt->data = ngx_pnalloc(c->pool, rcpt->len);
 	if (rcpt->data == NULL) {
