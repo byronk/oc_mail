@@ -1,14 +1,7 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
+#include <oc_mail_utils.h>
 
-#define OC_MAIL_ADDR_OK				0
-#define OC_MAIL_ADDR_TOO_LONG		-1
-#define OC_MAIL_ADDR_LOCAL_TOO_LONG -2
-#define OC_MAIL_ADDR_INVALID		-3
-
-#define OC_MAIL_ADDR_LOCAL_PART_LEN_MAX	64
-#define OC_MAIL_ADDR_DOMAIN_LEN_MAX	253
-#define OC_MAIL_ADDR_LEN_MAX	254
 
 
 
@@ -23,7 +16,7 @@ oc_mail_addr_validate(ngx_str_t *addr)
 	domain由字母和"."组成，不超过253
 	邮件地址总长度不超过254
 	*/
-	ngx_uint_t                  i;
+	ngx_uint_t                  i, dn_len;
 	ngx_uint_t                  last_dot = 0;
 
 	u_char char_spec[]= "!#$%&'*+-/=?^_`{|}~";
@@ -60,7 +53,7 @@ oc_mail_addr_validate(ngx_str_t *addr)
 		if ((ca[0]>='A' && ca[0]<='Z') ||
 			(ca[0]>='a' && ca[0]<='z') ||
 			(ca[0]>='0' && ca[0]<='9') ||
-			ngx_strnstr(char_spec, (char *)ca, sizeof("!#$%&'*+-//=?^_`{|}~")))
+			ngx_strnstr(char_spec, (char *)ca, sizeof("!#$%&'*+-/=?^_`{|}~")))
 		{
 			continue;
 		} else {
@@ -73,13 +66,15 @@ oc_mail_addr_validate(ngx_str_t *addr)
 		return OC_MAIL_ADDR_INVALID;
 	}
 
-	if (i==1){
-		//local part 不允许长度为0
+	if (i==0 || i>OC_MAIL_ADDR_LOCAL_PART_LEN_MAX){
+		//local part 不允许长度为0，也不允许超过64
 		return OC_MAIL_ADDR_INVALID;
 	}
 
-	if (addr->len - i - 1 == 0) {
-		//域名长度不允许为空
+	dn_len = addr->len - i - 1;
+
+	if ( dn_len == 0 || dn_len > OC_MAIL_ADDR_DOMAIN_LEN_MAX) {
+		//域名长度不允许为空，也不允许超过最大长度
 		return OC_MAIL_ADDR_INVALID;
 	}
 

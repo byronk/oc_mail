@@ -2,6 +2,7 @@
 #include <ngx_core.h>
 #include <ngx_event.h>
 #include <oc_smtp.h>
+#include <oc_mail_utils.h>
 
 static void oc_smtp_init_session(ngx_connection_t *c);
 static void oc_smtp_greeting(oc_smtp_session_t *s, ngx_connection_t *c);
@@ -1474,7 +1475,7 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 {
 	u_char					   ch;
 	//ngx_str_t					l;
-	//ngx_uint_t 				i;
+	ngx_uint_t 					rc;
 	oc_smtp_core_srv_conf_t  *cscf;
 	ngx_str_t	*args;
 	u_char      *p, *arg, *last, *arg_start, *arg_end, c0, c1, c2, c3, c4;
@@ -1495,7 +1496,7 @@ static ngx_int_t oc_smtp_cmd_mail(oc_smtp_session_t *s, ngx_connection_t *c)
 
 	/* auth none */
 
-	if (s->smtp_from.len) {
+	if (s->smtp_from.len || s->null_return_path) {
 		ngx_str_set(&s->out, smtp_bad_sequence);
 		return NGX_OK;
 	}
@@ -1580,6 +1581,17 @@ parse_done:
 		}
 
 		ngx_memcpy(s->smtp_from.data, arg_start, arg_end - arg_start);
+
+		if (oc_mail_addr_validate(&s->smtp_from) != OC_MAIL_ADDR_OK) {
+			ngx_str_set(&s->out, smtp_invalid_argument);
+			ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+					"smtp mail from: invalid mail address \"%V\"", &s->smtp_from);
+			
+			ngx_str_null(&s->smtp_from);
+
+			return NGX_OK;
+
+		}
 
 		ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
 					"smtp mail from:\"%V\"", &s->smtp_from);
