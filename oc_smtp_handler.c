@@ -1750,6 +1750,18 @@ parse_done:
 	}
 
 	rcpt->len = arg_end - arg_start;
+	rcpt->data = arg_start;
+
+	if (oc_mail_addr_validate(rcpt) != OC_MAIL_ADDR_OK) {
+			ngx_str_set(&s->out, smtp_invalid_argument);
+			ngx_log_debug1(NGX_LOG_DEBUG_MAIL, c->log, 0,
+					"smtp rcpt to: invalid mail address \"%V\"", &s->smtp_from);
+			
+			ngx_str_null(&s->smtp_from);
+
+			return NGX_OK;
+
+		}	
 
 	rcpt->data = ngx_pnalloc(c->pool, rcpt->len);
 	if (rcpt->data == NULL) {
@@ -1757,7 +1769,7 @@ parse_done:
 	}
 
 	ngx_memcpy(rcpt->data, arg_start, arg_end - arg_start);
-
+	
 	ngx_log_debug2(NGX_LOG_DEBUG_MAIL, c->log, 0,
 				"smtp rcpt to[%d]:\"%V\"", s->smtp_rcpts.nelts, rcpt);
 
